@@ -1,0 +1,14 @@
+.env
+.env.*
+.railway-*.local
+.git
+node_modules
+data
+artifacts
+coverage
+recordings
+audio-dumps
+*.log
+*.db
+*.sqlite
+*.sqlite-*

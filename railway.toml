@@ -1,0 +1,10 @@
+[build]
+builder = "NIXPACKS"
+
+[deploy]
+# Run Node directly so Railway SIGTERM is handled by our process (not npm).
+startCommand = "node --env-file-if-exists=.env src/server.js"
+healthcheckPath = "/healthz"
+healthcheckTimeout = 60
+restartPolicyType = "ON_FAILURE"
+restartPolicyMaxRetries = 5

@@ -1,0 +1,6 @@
+name,phone,email,consent_status,do_not_call,language,tags,source,notes
+Asha Verma,+919811110001,asha@example.com,granted,false,en,"demo,interested",website,Ready for outreach
+Rohit Shah,+919811110002,rohit@example.com,granted,false,hi,demo,referral,Prefers Hindi
+Meera Nair,+919811110003,meera@example.com,pending,false,en,demo,event,Consent not yet recorded
+Kabir Ali,+919811110004,kabir@example.com,granted,true,en,"demo,dnc",import,Do-not-call for testing
+Priya Sen,+919811110005,priya@example.com,granted,false,en,demo,manual,Eligible backup lead

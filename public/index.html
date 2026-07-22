@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Voice Ops · Call Centre</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="sidebar" aria-label="Primary">
+        <div class="brand">
+          <p class="brand-kicker">AI Call Center</p>
+          <h1>Voice Ops</h1>
+          <p class="brand-sub">Outbound IVR control room</p>
+        </div>
+        <nav class="nav" aria-label="Sections">
+          <a href="#/dashboard" data-route="dashboard">Dashboard</a>
+          <a href="#/leads" data-route="leads">Leads</a>
+          <a href="#/campaigns" data-route="campaigns">Campaigns</a>
+          <a href="#/calls" data-route="calls">Calls</a>
+          <a href="#/follow-ups" data-route="follow-ups">Follow-ups</a>
+          <a href="#/settings" data-route="settings">Provider Settings</a>
+        </nav>
+        <div class="sidebar-foot">
+          <span class="provider-pill" id="provider-pill">Provider…</span>
+        </div>
+      </aside>
+
+      <div class="main-column">
+        <header class="topbar">
+          <div>
+            <p class="page-eyebrow" id="page-eyebrow">Operations</p>
+            <h2 id="page-title">Dashboard</h2>
+          </div>
+          <div class="topbar-actions">
+            <button type="button" class="secondary" id="refresh-btn">Refresh</button>
+          </div>
+        </header>
+        <div id="notice" class="notice" hidden role="status"></div>
+        <main id="page-root" class="page-root" aria-live="polite"></main>
+      </div>
+    </div>
+    <dialog id="modal" class="modal">
+      <form method="dialog" id="modal-form">
+        <header>
+          <h3 id="modal-title">Details</h3>
+          <button type="submit" class="secondary" value="cancel" aria-label="Close">Close</button>
+        </header>
+        <div id="modal-body"></div>
+      </form>
+    </dialog>
+    <script type="module" src="/app.js"></script>
+  </body>
+</html>
