@@ -45,7 +45,7 @@ Raw audio remains disabled by default (`SMARTPING_STORE_AUDIO=false`).
 
 ## 5. Exact environment variables
 
-Set these values in Railway (generate a new stream secret; do not reuse any PDF API token):
+Set these values in Railway (generate a new stream secret for simulator command API only; do not reuse any PDF API token):
 
 ```text
 NODE_ENV=production
@@ -56,10 +56,14 @@ CALL_PROVIDER=mock
 SMARTPING_DRY_RUN=true
 SMARTPING_LIVE_CALLS_ENABLED=false
 SMARTPING_STORE_AUDIO=false
-SMARTPING_STREAM_AUTH_MODE=required
-SMARTPING_STREAM_SHARED_SECRET=<new Railway-only secret>
+SMARTPING_STREAM_AUTH_MODE=provider-compatible
+SMARTPING_STREAM_SHARED_SECRET=<railway-only secret for /api/streams commands>
+SMARTPING_WEBHOOK_PATH=/webhooks/smartping/call-status
+SMARTPING_WEBHOOK_AUTH_MODE=validation-only
 WEBHOOK_SECRET=<new random secret>
 ```
+
+`provider-compatible` allows SmartPing to upgrade `wss://…/ws/voice/smartping` **without** `Authorization: Bearer`. Keep `required` only for internal Bearer simulator tests.
 
 Keep unset initially:
 
@@ -68,6 +72,7 @@ SMARTPING_API_TOKEN
 SMARTPING_DID_NUMBER
 SMARTPING_BASE_URL
 SMARTPING_STREAM_URL
+SMARTPING_WEBHOOK_SHARED_SECRET
 ```
 
 Do **not** manually set `PORT`. Railway injects it.
@@ -98,29 +103,35 @@ Expected body:
 
 ## 7. Public WSS simulator command
 
+Provider-compatible mode (SmartPing / default Railway):
+
 ```bash
 npm run simulate:smartping-stream -- \
   --url wss://<generated-domain>/ws/voice/smartping \
   --token-file .railway-stream-secret.local
 ```
 
-Or:
+This connects **without** a WebSocket Bearer header. The token file is used only for the authenticated stream **command** API (`clear` / `hangup` / `transfer`) in stream-only mode.
+
+Required Bearer mode (internal tests only):
 
 ```bash
 npm run simulate:smartping-stream -- \
   --url wss://<generated-domain>/ws/voice/smartping \
-  --token <Railway stream test secret>
+  --token-file .railway-stream-secret.local \
+  --ws-auth
 ```
 
 Prefer `--token-file` so the secret is not pasted into shell history.
 
-The simulator sends:
+Call-status webhook (public in stream-only):
 
 ```text
-Authorization: Bearer <Railway stream test secret>
+POST https://<generated-domain>/webhooks/smartping/call-status
+Content-Type: application/json
 ```
 
-This bearer auth is temporary test protection only. It is not a SmartPing-documented WebSocket authentication contract and must not be called a “Token URL.”
+Exact SmartPing status payload fields remain a schema dependency; the adapter accepts JSON objects defensively and stores only optional identifiers / hashed phone-like values.
 
 ## 8. Log and secret checks
 
@@ -128,10 +139,12 @@ Inspect Railway logs and confirm:
 
 - No API tokens
 - No stream shared secret
-- No raw audio payloads
-- No phone-number dumps from dashboard data
+- No Authorization header values
+- No raw audio payloads / base64 media
+- No phone-number dumps
 - No outbound SmartPing HTTP requests
 - No external AI provider calls
+- Structured WS logs contain only route, auth result, connection id, sanitized IP/UA, protocol event names, close codes
 
 ## 9. Rollback steps
 

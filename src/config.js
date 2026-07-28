@@ -17,7 +17,24 @@ function normalizeExposureMode(value) {
 
 function normalizeStreamAuthMode(value) {
   const mode = String(value ?? 'disabled').trim().toLowerCase();
-  return mode === 'required' ? 'required' : 'disabled';
+  if (mode === 'required') return 'required';
+  if (mode === 'provider-compatible' || mode === 'provider_compatible') {
+    return 'provider-compatible';
+  }
+  return 'disabled';
+}
+
+function normalizeWebhookAuthMode(value) {
+  const mode = String(value ?? 'validation-only').trim().toLowerCase();
+  if (mode === 'shared-secret' || mode === 'shared_secret') return 'shared-secret';
+  if (mode === 'disabled') return 'disabled';
+  return 'validation-only';
+}
+
+function normalizeWebhookPath(value) {
+  const raw = String(value ?? '/webhooks/smartping/call-status').trim();
+  if (!raw.startsWith('/')) return `/${raw}`;
+  return raw.replace(/\/+$/, '') || '/webhooks/smartping/call-status';
 }
 
 export function getConfig(overrides = {}) {
@@ -85,6 +102,45 @@ export function getConfig(overrides = {}) {
         smartPingOverrides.streamSharedSecret ??
         process.env.SMARTPING_STREAM_SHARED_SECRET ??
         '',
+      maxConnections: Number(
+        smartPingOverrides.maxConnections ??
+          process.env.SMARTPING_STREAM_MAX_CONNECTIONS ??
+          20,
+      ),
+      maxMessageBytes: Number(
+        smartPingOverrides.maxMessageBytes ??
+          process.env.SMARTPING_STREAM_MAX_MESSAGE_BYTES ??
+          65_536,
+      ),
+      idleTimeoutMs: Number(
+        smartPingOverrides.idleTimeoutMs ??
+          process.env.SMARTPING_STREAM_IDLE_TIMEOUT_MS ??
+          60_000,
+      ),
+      webhookPath: normalizeWebhookPath(
+        smartPingOverrides.webhookPath ??
+          process.env.SMARTPING_WEBHOOK_PATH ??
+          '/webhooks/smartping/call-status',
+      ),
+      webhookAuthMode: normalizeWebhookAuthMode(
+        smartPingOverrides.webhookAuthMode ??
+          process.env.SMARTPING_WEBHOOK_AUTH_MODE ??
+          'validation-only',
+      ),
+      webhookSharedSecret:
+        smartPingOverrides.webhookSharedSecret ??
+        process.env.SMARTPING_WEBHOOK_SHARED_SECRET ??
+        '',
+      webhookMaxBodyBytes: Number(
+        smartPingOverrides.webhookMaxBodyBytes ??
+          process.env.SMARTPING_WEBHOOK_MAX_BODY_BYTES ??
+          16_384,
+      ),
+      webhookRateLimitPerMinute: Number(
+        smartPingOverrides.webhookRateLimitPerMinute ??
+          process.env.SMARTPING_WEBHOOK_RATE_LIMIT_PER_MINUTE ??
+          60,
+      ),
     },
   };
 }
@@ -113,13 +169,20 @@ export function getPublicSettings(config, providerName) {
     storeAudioEnabled: config.smartPing.storeAudio === true,
     streamAuthMode: config.smartPing.streamAuthMode,
     streamAuthRequired: config.smartPing.streamAuthMode === 'required',
+    streamAuthProviderCompatible:
+      config.smartPing.streamAuthMode === 'provider-compatible',
     streamSharedSecretConfigured: Boolean(config.smartPing.streamSharedSecret),
     aiProvider: 'mock',
     webhookAuthenticationConfigured: Boolean(config.webhookSecret),
+    smartPingWebhookPath: config.smartPing.webhookPath,
+    smartPingWebhookAuthMode: config.smartPing.webhookAuthMode,
+    smartPingWebhookSharedSecretConfigured: Boolean(
+      config.smartPing.webhookSharedSecret,
+    ),
     publicBaseUrlConfigured: Boolean(config.publicBaseUrl),
     followUpLinkPlaceholder: config.followUpLinkPlaceholder,
     streamPathHint: STREAM_PATH,
     smartPingActivationMessage:
-      'Phase 3B can expose a public WebSocket stream endpoint in stream-only mode. Live CALL_PROVIDER=smartping calls remain disabled. Temporary stream auth is for Railway simulator protection only until SmartPing documents WebSocket authentication.',
+      'Public stream-only mode can use SMARTPING_STREAM_AUTH_MODE=provider-compatible so SmartPing can upgrade /ws/voice/smartping without a Bearer token. Live CALL_PROVIDER=smartping calls remain disabled. required mode is retained for internal simulator Bearer tests only.',
   };
 }

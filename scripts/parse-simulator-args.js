@@ -1,5 +1,10 @@
 export function parseArgs(argv) {
-  const args = { url: null, token: null, tokenFile: null };
+  const args = {
+    url: null,
+    token: null,
+    tokenFile: null,
+    wsAuth: false,
+  };
   for (let index = 0; index < argv.length; index += 1) {
     const part = argv[index];
     if (part === '--url') {
@@ -17,6 +22,10 @@ export function parseArgs(argv) {
       index += 1;
       continue;
     }
+    if (part === '--ws-auth') {
+      args.wsAuth = true;
+      continue;
+    }
     if (part.startsWith('--url=')) {
       args.url = part.slice('--url='.length);
       continue;
@@ -27,6 +36,12 @@ export function parseArgs(argv) {
     }
     if (part.startsWith('--token-file=')) {
       args.tokenFile = part.slice('--token-file='.length);
+      continue;
+    }
+    if (part.startsWith('--ws-auth=')) {
+      args.wsAuth = ['1', 'true', 'yes', 'on'].includes(
+        part.slice('--ws-auth='.length).toLowerCase(),
+      );
     }
   }
   return args;

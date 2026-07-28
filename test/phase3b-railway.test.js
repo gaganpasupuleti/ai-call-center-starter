@@ -189,7 +189,7 @@ test('local full mode still works and dry-run prevents network calls', async () 
   });
 });
 
-test('simulator CLI accepts --url, --token and --token-file', () => {
+test('simulator CLI accepts --url, --token, --token-file and --ws-auth', () => {
   const parsed = parseArgs([
     '--url',
     'wss://example.up.railway.app/ws/voice/smartping',
@@ -198,11 +198,14 @@ test('simulator CLI accepts --url, --token and --token-file', () => {
   ]);
   assert.equal(parsed.url, 'wss://example.up.railway.app/ws/voice/smartping');
   assert.equal(parsed.token, 'abc123');
+  assert.equal(parsed.wsAuth, false);
   const withFile = parseArgs([
     '--url=wss://example.up.railway.app/ws/voice/smartping',
     '--token-file=.railway-stream-secret.local',
+    '--ws-auth',
   ]);
   assert.equal(withFile.tokenFile, '.railway-stream-secret.local');
+  assert.equal(withFile.wsAuth, true);
 });
 
 test('no secret included in stream-only blocked responses', async () => {

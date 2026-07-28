@@ -13,7 +13,19 @@ import {
   buildVoicebotCallRequest,
 } from './streaming/smartping/request-builder.js';
 import { safeErrorMessage } from './streaming/redaction.js';
-import { authorizeStreamUpgrade } from './streaming/stream-auth.js';
+import { authorizeStreamCommand } from './streaming/stream-auth.js';
+import {
+  authorizeCallStatusWebhook,
+  createRateLimiter,
+  hashEventKey,
+  logWebhookEvent,
+  normalizeCallStatusPayload,
+} from './streaming/smartping/call-status-webhook.js';
+import {
+  classifyUserAgent,
+  clientIpFromRequest,
+  sanitizeIp,
+} from './streaming/stream-logger.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const publicDirectory = path.resolve(__dirname, '..', 'public');
@@ -41,14 +53,18 @@ export function createApp({ repository, provider, config, sessionManager = null 
   const secrets = [
     config.smartPing?.apiToken,
     config.smartPing?.streamSharedSecret,
+    config.smartPing?.webhookSharedSecret,
     config.webhookSecret,
   ].filter(Boolean);
+  const webhookRateLimiter = createRateLimiter({
+    limitPerMinute: config.smartPing?.webhookRateLimitPerMinute ?? 60,
+  });
 
   return async function app(request, response) {
     response.setHeader('access-control-allow-origin', '*');
     response.setHeader(
       'access-control-allow-headers',
-      'content-type, x-webhook-secret, authorization',
+      'content-type, x-webhook-secret, x-smartping-webhook-secret, authorization',
     );
     response.setHeader('access-control-allow-methods', 'GET, POST, PATCH, OPTIONS');
 
@@ -60,6 +76,8 @@ export function createApp({ repository, provider, config, sessionManager = null 
 
     const url = new URL(request.url, `http://${request.headers.host ?? 'localhost'}`);
     const pathname = url.pathname;
+    const webhookPath =
+      config.smartPing?.webhookPath ?? '/webhooks/smartping/call-status';
 
     try {
       if (request.method === 'GET' && pathname === '/healthz') {
@@ -70,15 +88,29 @@ export function createApp({ repository, provider, config, sessionManager = null 
         });
       }
 
+      if (request.method === 'POST' && pathname === webhookPath) {
+        return handleSmartPingCallStatusWebhook({
+          request,
+          response,
+          config,
+          repository,
+          webhookRateLimiter,
+          secrets,
+        });
+      }
+
       const streamCommandMatchEarly = pathname.match(
         /^\/api\/streams\/([^/]+)\/commands$/,
       );
+      const commandAuth =
+        request.method === 'POST' && streamCommandMatchEarly
+          ? authorizeStreamCommand(request, config.smartPing ?? {})
+          : { ok: false };
       const isAuthenticatedStreamCommand =
         request.method === 'POST' &&
         streamCommandMatchEarly &&
         config.exposureMode === 'stream-only' &&
-        config.smartPing?.streamAuthMode === 'required' &&
-        authorizeStreamUpgrade(request, config.smartPing).ok;
+        commandAuth.ok;
 
       if (config.exposureMode === 'stream-only' && !isAuthenticatedStreamCommand) {
         return sendJson(response, 404, { error: 'Not found' });
@@ -427,4 +459,113 @@ export function createApp({ repository, provider, config, sessionManager = null 
       });
     }
   };
+}
+
+async function handleSmartPingCallStatusWebhook({
+  request,
+  response,
+  config,
+  repository,
+  webhookRateLimiter,
+  secrets,
+}) {
+  const route = config.smartPing?.webhookPath ?? '/webhooks/smartping/call-status';
+  const { ipPartial, ipHash } = sanitizeIp(clientIpFromRequest(request));
+  const ua = classifyUserAgent(request.headers?.['user-agent']);
+  const rateKey = ipHash || 'unknown';
+
+  const contentType = String(request.headers['content-type'] ?? '');
+  if (!contentType.toLowerCase().includes('application/json')) {
+    logWebhookEvent({
+      event: 'webhook_rejected',
+      route,
+      auth: 'rejected',
+      authReason: 'invalid_content_type',
+      validationError: 'invalid_content_type',
+    });
+    return sendJson(response, 415, { error: 'Content-Type must be application/json' });
+  }
+
+  const rate = webhookRateLimiter.check(rateKey);
+  if (!rate.ok) {
+    logWebhookEvent({
+      event: 'webhook_rejected',
+      route,
+      auth: 'rejected',
+      authReason: 'rate_limited',
+      validationError: 'rate_limited',
+    });
+    return sendJson(response, 429, { error: 'Rate limit exceeded' });
+  }
+
+  const auth = authorizeCallStatusWebhook(request, config.smartPing ?? {});
+  if (!auth.ok) {
+    logWebhookEvent({
+      event: 'webhook_auth',
+      route,
+      auth: auth.auth,
+      authReason: auth.authReason,
+      validationError: auth.authReason,
+    });
+    return sendJson(response, auth.statusCode ?? 401, { error: auth.message });
+  }
+
+  let body;
+  try {
+    body = await readJson(
+      request,
+      config.smartPing?.webhookMaxBodyBytes ?? 16_384,
+    );
+  } catch (error) {
+    logWebhookEvent({
+      event: 'webhook_rejected',
+      route,
+      auth: auth.auth,
+      authReason: auth.authReason,
+      validationError: error.statusCode === 413 ? 'payload_too_large' : 'invalid_json',
+    });
+    throw error;
+  }
+
+  let normalized;
+  try {
+    normalized = normalizeCallStatusPayload(body);
+  } catch (error) {
+    logWebhookEvent({
+      event: 'webhook_rejected',
+      route,
+      auth: auth.auth,
+      authReason: auth.authReason,
+      validationError: error.code ?? 'invalid_body',
+    });
+    throw error;
+  }
+
+  const eventKeyHash = hashEventKey(normalized.eventKey);
+  const stored = repository.recordSmartPingCallStatusEvent({
+    eventKey: normalized.eventKey,
+    callRef: normalized.callRef,
+    status: normalized.status,
+    phoneHash: normalized.phoneHash,
+    metadata: {
+      fieldKeys: normalized.fieldKeys,
+      schemaDependency: normalized.schemaDependency,
+      ipPartial,
+      ua,
+    },
+  });
+
+  logWebhookEvent({
+    event: stored.duplicate ? 'webhook_duplicate' : 'webhook_accepted',
+    route,
+    auth: auth.auth,
+    authReason: auth.authReason,
+    eventKeyHash,
+  });
+
+  return sendJson(response, 200, {
+    ok: true,
+    duplicate: stored.duplicate === true,
+    accepted: true,
+  });
 }

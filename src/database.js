@@ -165,6 +165,16 @@ export class Repository {
         metadata_json TEXT,
         created_at TEXT NOT NULL
       );
+
+      CREATE TABLE IF NOT EXISTS smartping_call_status_events (
+        id TEXT PRIMARY KEY,
+        event_key TEXT NOT NULL UNIQUE,
+        call_ref TEXT,
+        status TEXT,
+        phone_hash TEXT,
+        metadata_json TEXT,
+        created_at TEXT NOT NULL
+      );
     `);
 
     this.ensureColumn('calls', 'interpreted_response', 'TEXT');
@@ -1238,5 +1248,50 @@ export class Repository {
         ...row,
         metadata: parseJson(row.metadata_json, {}),
       }));
+  }
+
+  recordSmartPingCallStatusEvent(input) {
+    const existing = this.db
+      .prepare('SELECT * FROM smartping_call_status_events WHERE event_key = ?')
+      .get(input.eventKey);
+    if (existing) {
+      return {
+        duplicate: true,
+        id: existing.id,
+        eventKey: existing.event_key,
+        callRef: existing.call_ref,
+        status: existing.status,
+        phoneHash: existing.phone_hash,
+        createdAt: existing.created_at,
+      };
+    }
+
+    const id = randomUUID();
+    const timestamp = now();
+    this.db
+      .prepare(`
+        INSERT INTO smartping_call_status_events (
+          id, event_key, call_ref, status, phone_hash, metadata_json, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?)
+      `)
+      .run(
+        id,
+        input.eventKey,
+        input.callRef ?? null,
+        input.status ?? null,
+        input.phoneHash ?? null,
+        JSON.stringify(input.metadata ?? {}),
+        timestamp,
+      );
+
+    return {
+      duplicate: false,
+      id,
+      eventKey: input.eventKey,
+      callRef: input.callRef ?? null,
+      status: input.status ?? null,
+      phoneHash: input.phoneHash ?? null,
+      createdAt: timestamp,
+    };
   }
 }

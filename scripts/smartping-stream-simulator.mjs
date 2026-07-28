@@ -4,7 +4,8 @@
  *
  * Usage:
  *   npm run simulate:smartping-stream
- *   npm run simulate:smartping-stream -- --url wss://example/ws/voice/smartping --token <secret>
+ *   npm run simulate:smartping-stream -- --url wss://example/ws/voice/smartping
+ *   npm run simulate:smartping-stream -- --url wss://example/ws/voice/smartping --token <secret> --ws-auth
  */
 import WebSocket from 'ws';
 import { randomUUID } from 'node:crypto';
@@ -96,12 +97,14 @@ function waitFor(predicate, label, timeoutMs = 8000) {
 async function main() {
   console.log(`Connecting simulator to ${wsUrl}`);
   console.log('NOTE: This simulator never calls SmartPing or places a telephone call.');
-  if (token) {
-    console.log('Using Authorization bearer token for temporary stream test auth.');
+  if (token && cli.wsAuth) {
+    console.log('Using Authorization bearer token for WebSocket upgrade (required mode).');
+  } else if (token) {
+    console.log('Token reserved for stream command API only (provider-compatible WSS).');
   }
 
   const headers = {};
-  if (token) headers.Authorization = `Bearer ${token}`;
+  if (token && cli.wsAuth) headers.Authorization = `Bearer ${token}`;
 
   const ws = new WebSocket(wsUrl, { headers });
   await new Promise((resolve, reject) => {
@@ -208,7 +211,8 @@ async function main() {
     streamSid,
     callSid,
     url: wsUrl,
-    authUsed: Boolean(token),
+    authUsed: Boolean(token && cli.wsAuth),
+    commandAuthUsed: Boolean(token),
     received: seen,
     networkExternalCalls: 0,
     telephoneCalls: 0,
