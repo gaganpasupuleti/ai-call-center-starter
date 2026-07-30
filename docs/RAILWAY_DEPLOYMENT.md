@@ -69,7 +69,25 @@ WEBHOOK_SECRET=<new random secret>
 
 `SMARTPING_PLAYBACK_MODE=fixed-welcome` plays `assets/audio/welcome.ulaw` (raw G.711 μ-law 8 kHz) on WebSocket `start` and bypasses mock STT/TTS.
 
-Stage 1 single-call gates (leave false until explicitly approved):
+### Outbound dialer (optional on stream-only)
+
+Set `OUTBOUND_DIALER_LIVE=true` to expose the Outbound dialer UI + `/api/outbound/*` and Call Station APIs under `APP_EXPOSURE_MODE=stream-only`. Classic campaign/LIVE gates stay closed; only confirmed dialer calls place real network requests.
+
+Real live dials are written to Call Station (`stream_test_calls`) with:
+- masked destination / DID
+- `app_call_id` for stream playback correlation
+- timeline notes (`outbound_dialer_live`, TTS meta, provider HTTP)
+- **no** raw phone numbers or spoken message text
+
+View them at `#/call-station` on the same service.
+
+```text
+OUTBOUND_DIALER_LIVE=true
+OUTBOUND_TTS_PROVIDER=edge
+OUTBOUND_TTS_VOICE=en-US-JennyNeural
+```
+
+Stage 1 single-call gates (leave false unless you intentionally open classic CLI gates):
 
 ```text
 SMARTPING_LIVE_CALLS_ENABLED=false

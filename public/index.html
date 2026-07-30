@@ -4,38 +4,68 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Voice Ops · Call Centre</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&display=swap"
+      rel="stylesheet"
+    />
     <link rel="stylesheet" href="/styles.css" />
   </head>
   <body>
     <div class="app-shell">
-      <aside class="sidebar" aria-label="Primary">
-        <div class="brand">
-          <p class="brand-kicker">AI Call Center</p>
-          <h1>Voice Ops</h1>
-          <p class="brand-sub">Outbound IVR control room</p>
+      <nav class="admin-topnav" aria-label="Admin">
+        <div class="admin-topnav-inner">
+          <div class="brand">
+            <div class="brand-mark" aria-hidden="true">
+              <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.2">
+                <path d="M8 8h8v8H8z" />
+                <path d="M4 4h4v4H4zM16 4h4v4h-4zM4 16h4v4H4zM16 16h4v4h-4z" />
+              </svg>
+            </div>
+            <div class="brand-copy">
+              <span class="brand-title">Voice Ops</span>
+              <span class="brand-sub">Call Centre Admin</span>
+            </div>
+          </div>
+
+          <label class="nav-select-wrap">
+            <span class="sr-only">Workspace section</span>
+            <select id="nav-select" aria-label="Workspace sections">
+              <option value="dashboard">Dashboard</option>
+              <option value="leads">Leads</option>
+              <option value="campaigns">Campaigns</option>
+              <option value="calls">Calls</option>
+              <option value="outbound">Outbound</option>
+              <option value="call-station">Call Station</option>
+              <option value="follow-ups">Follow-ups</option>
+              <option value="settings">Settings</option>
+            </select>
+          </label>
+
+          <div class="pill-track" role="tablist" aria-label="Workspace sections">
+            <a href="#/dashboard" data-route="dashboard" role="tab">Dashboard</a>
+            <a href="#/leads" data-route="leads" role="tab">Leads</a>
+            <a href="#/campaigns" data-route="campaigns" role="tab">Campaigns</a>
+            <a href="#/calls" data-route="calls" role="tab">Calls</a>
+            <a href="#/outbound" data-route="outbound" role="tab">Outbound</a>
+            <a href="#/call-station" data-route="call-station" role="tab">Call Station</a>
+            <a href="#/follow-ups" data-route="follow-ups" role="tab">Follow-ups</a>
+            <a href="#/settings" data-route="settings" role="tab">Settings</a>
+          </div>
+
+          <div class="topnav-end">
+            <span class="provider-pill" id="provider-pill">Provider…</span>
+            <button type="button" class="secondary" id="refresh-btn">Refresh</button>
+          </div>
         </div>
-        <nav class="nav" aria-label="Sections">
-          <a href="#/dashboard" data-route="dashboard">Dashboard</a>
-          <a href="#/leads" data-route="leads">Leads</a>
-          <a href="#/campaigns" data-route="campaigns">Campaigns</a>
-          <a href="#/calls" data-route="calls">Calls</a>
-          <a href="#/call-station" data-route="call-station">Call Station</a>
-          <a href="#/follow-ups" data-route="follow-ups">Follow-ups</a>
-          <a href="#/settings" data-route="settings">Provider Settings</a>
-        </nav>
-        <div class="sidebar-foot">
-          <span class="provider-pill" id="provider-pill">Provider…</span>
-        </div>
-      </aside>
+      </nav>
 
       <div class="main-column">
-        <header class="topbar">
+        <header class="page-hero">
           <div>
             <p class="page-eyebrow" id="page-eyebrow">Operations</p>
             <h2 id="page-title">Dashboard</h2>
-          </div>
-          <div class="topbar-actions">
-            <button type="button" class="secondary" id="refresh-btn">Refresh</button>
           </div>
         </header>
         <div id="notice" class="notice" hidden role="status"></div>

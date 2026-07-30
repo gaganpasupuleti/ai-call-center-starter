@@ -47,6 +47,10 @@ async function withServer(run, overrides = {}) {
     ...config.smartPing,
     ...(overrides.smartPing ?? {}),
   };
+  config.outbound = {
+    ...(config.outbound || {}),
+    dialerLive: overrides.outbound?.dialerLive === true,
+  };
 
   const provider = new MockProvider();
   const sessionManager = new StreamSessionManager({

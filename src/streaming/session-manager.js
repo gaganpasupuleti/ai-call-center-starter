@@ -14,6 +14,7 @@ import {
   getWelcomeMulaw,
   isFixedWelcomeMode,
 } from './fixed-audio.js';
+import { getOutboundPromptStore } from './outbound/prompt-store.js';
 
 function nowIso() {
   return new Date().toISOString();
@@ -25,11 +26,13 @@ export class StreamSessionManager {
     config,
     pipeline = new VoicePipeline(),
     callStation = null,
+    promptStore = null,
   }) {
     this.repository = repository;
     this.config = config;
     this.pipeline = pipeline;
     this.callStation = callStation;
+    this.promptStore = promptStore || getOutboundPromptStore();
     this.sessions = new Map();
     this.allSessions = new Set();
   }
@@ -204,13 +207,19 @@ export class StreamSessionManager {
           this.#send(session, buildOutboundMedia(session.streamSid, chunk));
           session.stats.mediaOut += 1;
           if (
-            session.metadata.welcomePlayed &&
+            (session.metadata.welcomePlayed || session.metadata.customAudioPlayed) &&
             !session.metadata.welcomeCompleted &&
             (session.queue?.pendingChunks ?? 0) === 0
           ) {
             session.metadata.welcomeCompleted = true;
             session.metadata.audioCompletedAt = nowIso();
             this.callStation?.markAudioCompleted?.(session);
+            if (session.metadata.customAudioPlayed) {
+              this.callStation?.recordTimeline?.(session, {
+                event: 'custom_audio_completed',
+                detail: null,
+              });
+            }
           }
         },
       });
@@ -233,11 +242,59 @@ export class StreamSessionManager {
     this.#persistEvent(session, event);
     this.callStation?.onProtocolEvent?.(session, 'start');
 
-    const playback = this.#maybeEnqueueFixedWelcome(session);
+    const playback = this.#maybeEnqueueOutboundOrWelcome(session);
     if (!alreadyStarted) {
       this.callStation?.onStreamStarted?.(session, playback);
     }
     return { ok: true, stream: record, playback, duplicateStart: alreadyStarted };
+  }
+
+  #maybeEnqueueOutboundOrWelcome(session) {
+    if (session.metadata.welcomePlayed === true || session.metadata.customAudioPlayed === true) {
+      return {
+        mode: session.metadata.playbackMode || 'fixed-welcome',
+        enqueuedChunks: 0,
+        skippedDuplicate: true,
+        byteLength: session.metadata.welcomeBytes ?? session.metadata.customAudioBytes ?? 0,
+      };
+    }
+
+    const appCallId = session.appCallId || session.customParameters?.app_call_id;
+    if (appCallId) {
+      const built = this.promptStore?.buildPlaybackBytes?.(appCallId);
+      if (built?.bytes?.length) {
+        const enqueuedChunks = this.sendMedia(session, built.bytes);
+        this.sendMark(session, 'outbound-prompt-complete');
+        session.metadata.playbackMode = 'outbound-tts';
+        session.metadata.customAudioPlayed = true;
+        session.metadata.welcomePlayed = true; // reuse completion/pipeline skip guards
+        session.metadata.customAudioBytes = built.bytes.length;
+        session.metadata.customRepeatCount = built.prompt.repeatCount;
+        session.metadata.welcomeBytes = built.bytes.length;
+        session.metadata.welcomeDurationSeconds = Number(
+          (built.bytes.length / 8000).toFixed(3),
+        );
+        session.metadata.audioQueuedAt = nowIso();
+        this.promptStore.markConsumed(appCallId);
+        this.callStation?.recordTimeline?.(session, {
+          event: 'custom_audio_queued',
+          detail: `repeat=${built.prompt.repeatCount}`,
+        });
+        this.callStation?.markAudioQueued?.(session, {
+          chunks: enqueuedChunks,
+          durationSeconds: session.metadata.welcomeDurationSeconds,
+        });
+        return {
+          mode: 'outbound-tts',
+          enqueuedChunks,
+          byteLength: built.bytes.length,
+          durationSeconds: session.metadata.welcomeDurationSeconds,
+          repeatCount: built.prompt.repeatCount,
+        };
+      }
+    }
+
+    return this.#maybeEnqueueFixedWelcome(session);
   }
 
   #maybeEnqueueFixedWelcome(session) {
@@ -304,9 +361,17 @@ export class StreamSessionManager {
     this.#persistEvent(session, event, { validationResult: 'ok' });
     this.callStation?.onProtocolEvent?.(session, 'media');
 
-    // Stage 1 fixed playback: do not run mock STT/TTS.
-    if (isFixedWelcomeMode(this.config)) {
-      return { ok: true, playbackMode: 'fixed-welcome', pipelineSkipped: true };
+    // Fixed welcome or dialer TTS: do not run mock STT/TTS.
+    if (
+      isFixedWelcomeMode(this.config) ||
+      session.metadata.playbackMode === 'outbound-tts' ||
+      session.metadata.customAudioPlayed
+    ) {
+      return {
+        ok: true,
+        playbackMode: session.metadata.playbackMode || 'fixed-welcome',
+        pipelineSkipped: true,
+      };
     }
 
     const result = await this.pipeline.handleInboundAudio(event.payload, {

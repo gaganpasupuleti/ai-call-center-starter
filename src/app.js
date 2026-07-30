@@ -9,6 +9,7 @@ import { CampaignService } from './services/campaign-service.js';
 import { LeadService } from './services/lead-service.js';
 import {
   executeVoicebotCall,
+  executeSingleVoicebotCall,
   toRedactedRequestPreview,
   buildVoicebotCallRequest,
 } from './streaming/smartping/request-builder.js';
@@ -27,6 +28,18 @@ import {
   sanitizeIp,
 } from './streaming/stream-logger.js';
 import { CallStationTracker } from './streaming/call-station-tracker.js';
+import {
+  normalizeOutboundMessage,
+  normalizeOutboundPhone,
+  normalizeRepeatCount,
+} from './streaming/outbound/phone.js';
+import { getOutboundPromptStore } from './streaming/outbound/prompt-store.js';
+import {
+  getTtsHealth,
+  synthesizeToMulaw,
+  TtsError,
+} from './streaming/tts/synthesize.js';
+import { maskPhone } from './streaming/call-station.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const publicDirectory = path.resolve(__dirname, '..', 'public');
@@ -53,6 +66,7 @@ export function createApp({
   config,
   sessionManager = null,
   callStation = null,
+  promptStore = null,
 }) {
   const callService = new CallService({ repository, provider, config });
   const leadService = new LeadService({ repository });
@@ -68,6 +82,54 @@ export function createApp({
     sessionManager.callStation = station;
   }
   station.setSessionManager?.(sessionManager);
+  const outboundPrompts = promptStore || getOutboundPromptStore();
+  if (sessionManager && !sessionManager.promptStore) {
+    sessionManager.promptStore = outboundPrompts;
+  }
+
+  function outboundCredentialsReady() {
+    return Boolean(
+      config.smartPing?.baseUrl &&
+        config.smartPing?.apiToken &&
+        config.smartPing?.didNumber &&
+        (config.smartPing?.streamUrlConfigured || config.smartPing?.streamUrl),
+    );
+  }
+
+  function outboundLiveReady() {
+    const classicGates =
+      config.smartPing?.dryRun === false &&
+      config.smartPing?.liveCallsEnabled === true &&
+      config.smartPing?.singleCallEnabled === true;
+    const dialerLive =
+      config.outbound?.dialerLive === true && outboundCredentialsReady();
+    return classicGates || dialerLive;
+  }
+
+  function outboundLiveConfig() {
+    if (config.outbound?.dialerLive === true) {
+      return {
+        ...config.smartPing,
+        dryRun: false,
+        liveCallsEnabled: true,
+        singleCallEnabled: true,
+      };
+    }
+    return config.smartPing;
+  }
+
+  function isOutboundDialerPath(pathname) {
+    return (
+      pathname === '/' ||
+      pathname === '/index.html' ||
+      pathname === '/styles.css' ||
+      pathname === '/app.js' ||
+      pathname === '/health' ||
+      pathname === '/api/settings' ||
+      pathname.startsWith('/api/outbound/') ||
+      pathname.startsWith('/api/call-station/')
+    );
+  }
   const secrets = [
     config.smartPing?.apiToken,
     config.smartPing?.streamSharedSecret,
@@ -131,7 +193,13 @@ export function createApp({
         config.exposureMode === 'stream-only' &&
         commandAuth.ok;
 
-      if (config.exposureMode === 'stream-only' && !isAuthenticatedStreamCommand) {
+      const dialerSurfaceOpen =
+        config.outbound?.dialerLive === true && isOutboundDialerPath(pathname);
+      if (
+        config.exposureMode === 'stream-only' &&
+        !isAuthenticatedStreamCommand &&
+        !dialerSurfaceOpen
+      ) {
         return sendJson(response, 404, { error: 'Not found' });
       }
 
@@ -195,6 +263,220 @@ export function createApp({
         const call = station.getCall(decodeURIComponent(callStationDetailMatch[1]));
         if (!call) return sendJson(response, 404, { error: 'Call not found' });
         return sendJson(response, 200, call);
+      }
+
+      if (request.method === 'GET' && pathname === '/api/outbound/health') {
+        const tts = getTtsHealth({
+          voice: config.outbound?.ttsVoice,
+        });
+        const liveGatesOpen = outboundLiveReady();
+        return sendJson(response, 200, {
+          destinationMasked: maskPhone(process.env.SMARTPING_TEST_PHONE_NUMBER || ''),
+          destinationConfigured: Boolean(process.env.SMARTPING_TEST_PHONE_NUMBER),
+          didMasked: maskPhone(config.smartPing?.didNumber || ''),
+          dryRun: config.smartPing?.dryRun !== false,
+          liveCallsEnabled: config.smartPing?.liveCallsEnabled === true,
+          singleCallEnabled: config.smartPing?.singleCallEnabled === true,
+          dialerLive: config.outbound?.dialerLive === true,
+          credentialsReady: outboundCredentialsReady(),
+          liveGatesOpen,
+          liveCallActionAvailable: liveGatesOpen,
+          liveCallMessage: liveGatesOpen
+            ? 'Enter a number and message, confirm, then place the call.'
+            : 'Set OUTBOUND_DIALER_LIVE=true in full mode with SmartPing credentials, or open classic live gates.',
+          streamUrlConfigured: Boolean(config.smartPing?.streamUrlConfigured),
+          playbackMode: config.smartPing?.playbackMode || 'pipeline',
+          tts,
+          messageMaxLength: 500,
+          repeatMin: 1,
+          repeatMax: 5,
+        });
+      }
+
+      if (request.method === 'POST' && pathname === '/api/outbound/preview') {
+        const body = await readJson(request);
+        const phone = normalizeOutboundPhone(
+          body.phoneNumber ?? body.phone_number ?? process.env.SMARTPING_TEST_PHONE_NUMBER,
+        );
+        const message = normalizeOutboundMessage(body.message ?? body.text);
+        const repeatCount = normalizeRepeatCount(body.repeatCount ?? body.repeat);
+        if (!phone.ok) {
+          return sendJson(response, 400, { error: phone.error, code: phone.code });
+        }
+        if (!message.ok) {
+          return sendJson(response, 400, { error: message.error, code: message.code });
+        }
+        if (!config.smartPing?.baseUrl || !config.smartPing?.didNumber) {
+          return sendJson(response, 400, {
+            error: 'SmartPing base URL and DID must be configured',
+          });
+        }
+        const built = buildVoicebotCallRequest({
+          baseUrl: config.smartPing.baseUrl,
+          outboundPath: config.smartPing.outboundPath,
+          apiToken: config.smartPing.apiToken || '',
+          phoneNumber: phone.phone,
+          didNumber: config.smartPing.didNumber,
+          streamUrl: config.smartPing.streamUrl,
+          customParameters: {
+            app_call_id: 'outbound-preview',
+            source: 'outbound-dialer',
+          },
+        });
+        // Estimate duration without requiring a full TTS round-trip when unhealthy.
+        let audioMeta = {
+          estimated: true,
+          durationSeconds: null,
+          ttsReady: getTtsHealth().ready,
+        };
+        try {
+          const synthesized = await synthesizeToMulaw(message.text, {
+            voice: config.outbound?.ttsVoice,
+          });
+          audioMeta = {
+            estimated: false,
+            durationSeconds: Number(
+              (synthesized.durationSeconds * repeatCount).toFixed(3),
+            ),
+            singlePlayDurationSeconds: synthesized.durationSeconds,
+            byteLength: synthesized.byteLength,
+            energyRatio: synthesized.energyRatio,
+            provider: synthesized.provider,
+            voice: synthesized.voice,
+            cached: synthesized.cached === true,
+            ttsReady: true,
+            repeatCount,
+          };
+        } catch (error) {
+          audioMeta = {
+            estimated: true,
+            durationSeconds: null,
+            ttsReady: false,
+            error: error instanceof TtsError ? error.code : 'tts_error',
+            repeatCount,
+          };
+        }
+        return sendJson(response, 200, {
+          ok: true,
+          networkRequestMade: false,
+          phoneMasked: phone.masked,
+          messageLength: message.length,
+          repeatCount,
+          preview: toRedactedRequestPreview(built),
+          audio: audioMeta,
+        });
+      }
+
+      if (request.method === 'POST' && pathname === '/api/outbound/call') {
+        const body = await readJson(request);
+        const phone = normalizeOutboundPhone(
+          body.phoneNumber ?? body.phone_number ?? process.env.SMARTPING_TEST_PHONE_NUMBER,
+        );
+        const message = normalizeOutboundMessage(body.message ?? body.text);
+        const repeatCount = normalizeRepeatCount(body.repeatCount ?? body.repeat);
+        const confirm = body.confirm === true;
+        if (!phone.ok) {
+          return sendJson(response, 400, { error: phone.error, code: phone.code });
+        }
+        if (!message.ok) {
+          return sendJson(response, 400, { error: message.error, code: message.code });
+        }
+        if (!confirm) {
+          return sendJson(response, 403, {
+            error: 'Explicit confirm is required before placing a live call',
+            code: 'confirm_required',
+          });
+        }
+
+        const liveGatesOpen = outboundLiveReady();
+        if (!liveGatesOpen) {
+          return sendJson(response, 403, {
+            error:
+              'Outbound dialer live mode is not enabled. Set OUTBOUND_DIALER_LIVE=true (full mode) with SmartPing credentials, or open classic live gates.',
+            code: 'live_gates_closed',
+            networkRequestMade: false,
+          });
+        }
+
+        let synthesized;
+        try {
+          synthesized = await synthesizeToMulaw(message.text, {
+            voice: config.outbound?.ttsVoice,
+          });
+        } catch (error) {
+          const status = error?.statusCode || 500;
+          return sendJson(response, status, {
+            error: error?.message || 'TTS failed',
+            code: error?.code || 'tts_error',
+          });
+        }
+
+        const prompt = outboundPrompts.create({
+          phoneMasked: phone.masked,
+          messageLength: message.length,
+          repeatCount,
+          mulawBytes: synthesized.bytes,
+          durationSeconds: synthesized.durationSeconds,
+          voice: synthesized.voice,
+          provider: synthesized.provider,
+        });
+
+        let stationRow = null;
+        try {
+          stationRow = station.recordOutboundDialerCall?.({
+            appCallId: prompt.appCallId,
+            destinationMasked: phone.masked,
+            messageLength: message.length,
+            repeatCount,
+            voice: synthesized.voice,
+            durationSeconds: synthesized.durationSeconds,
+          });
+        } catch {
+          // monitoring must not block dial
+        }
+
+        const result = await executeSingleVoicebotCall(outboundLiveConfig(), {
+          phoneNumber: phone.phone,
+          confirm: true,
+          customParameters: {
+            app_call_id: prompt.appCallId,
+            source: 'outbound-dialer',
+            repeat_count: String(repeatCount),
+          },
+        });
+
+        try {
+          station.noteOutboundDialerResult?.(stationRow?.public_ref, {
+            httpStatus: result.httpStatus,
+            networkRequestMade: result.networkRequestMade === true,
+            providerCallId: result.providerCallId || result.callId || null,
+          });
+        } catch {
+          // monitoring must not block response
+        }
+
+        return sendJson(response, result.networkRequestMade ? 202 : 200, {
+          ok: true,
+          dryRun: result.dryRun === true,
+          networkRequestMade: result.networkRequestMade === true,
+          httpStatus: result.httpStatus ?? null,
+          responseBodyBytes: result.responseBodyBytes ?? null,
+          responseParsePending: result.responseParsePending === true,
+          appCallId: prompt.appCallId,
+          stationRef: stationRow?.public_ref || null,
+          phoneMasked: phone.masked,
+          messageLength: message.length,
+          repeatCount,
+          audio: {
+            durationSeconds: Number(
+              (synthesized.durationSeconds * repeatCount).toFixed(3),
+            ),
+            singlePlayDurationSeconds: synthesized.durationSeconds,
+            provider: synthesized.provider,
+            voice: synthesized.voice,
+            cached: synthesized.cached === true,
+          },
+        });
       }
 
       if (request.method === 'GET' && pathname === '/api/streams') {

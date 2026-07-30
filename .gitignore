@@ -10,6 +10,9 @@ data/*.sqlite
 data/*.sqlite-*
 coverage/
 artifacts/
+!artifacts/.gitkeep
+**/tts-cache/
+**/outbound-prompts/
 *.log
 .DS_Store
 *.pem

@@ -91,6 +91,15 @@ export class CallStationTracker {
         );
       }
     }
+    if (playback?.mode === 'outbound-tts' && !playback.skippedDuplicate) {
+      if (playback.enqueuedChunks > 0) {
+        timeline = pushTimeline(
+          { timeline },
+          'custom_audio_queued',
+          `repeat=${playback.repeatCount ?? 1}`,
+        );
+      }
+    }
     return this.repository.updateStreamTestCall(row.id, {
       streamSid: session.streamSid,
       callSid: session.callSid,
@@ -260,6 +269,77 @@ export class CallStationTracker {
           detail: null,
         },
       ],
+    });
+  }
+
+  /**
+   * Privacy-safe log for a real outbound dialer call (masked phone, no spoken text).
+   */
+  recordOutboundDialerCall({
+    appCallId,
+    destinationMasked,
+    messageLength,
+    repeatCount,
+    voice,
+    durationSeconds,
+  }) {
+    const ts = nowIso();
+    return this.repository.createStreamTestCall({
+      publicRef: `OB-${Date.now().toString(36)}`,
+      appCallId: appCallId || null,
+      status: 'initiated',
+      requestedAt: ts,
+      initiatedAt: ts,
+      destinationMasked,
+      didMasked: maskPhone(this.config.didNumber),
+      timeline: [
+        {
+          ts,
+          event: 'outbound_dialer_live',
+          detail: 'Real live call from Outbound dialer',
+        },
+        {
+          ts,
+          event: 'tts_prepared',
+          detail: `len=${Number(messageLength) || 0};repeat=${Number(repeatCount) || 1};voice=${voice || 'unknown'};audio_s=${durationSeconds ?? 'n/a'}`,
+        },
+      ],
+      metadata: {
+        source: 'outbound-dialer',
+        live: true,
+        messageLength: Number(messageLength) || 0,
+        repeatCount: Number(repeatCount) || 1,
+        voice: voice || null,
+        ttsDurationSeconds: durationSeconds ?? null,
+      },
+    });
+  }
+
+  noteOutboundDialerResult(publicRef, { httpStatus, networkRequestMade, providerCallId }) {
+    if (!publicRef) return null;
+    const row = this.repository.getStreamTestCallByPublicRef(publicRef);
+    if (!row) return null;
+    const timeline = Array.isArray(row.timeline) ? [...row.timeline] : [];
+    const ts = nowIso();
+    timeline.push({
+      ts,
+      event: networkRequestMade ? 'provider_accepted' : 'provider_no_network',
+      detail: `http=${httpStatus ?? 'n/a'};network=${networkRequestMade ? 'yes' : 'no'}`,
+    });
+    const failed =
+      networkRequestMade === true &&
+      typeof httpStatus === 'number' &&
+      (httpStatus < 200 || httpStatus >= 300);
+    return this.repository.updateStreamTestCall(row.id, {
+      providerCallId: providerCallId || row.provider_call_id || null,
+      status: failed ? 'failed' : row.status,
+      failureCategory: failed ? 'provider_http' : row.failure_category,
+      timeline,
+      metadata: {
+        ...(row.metadata || {}),
+        providerHttpStatus: httpStatus ?? null,
+        networkRequestMade: networkRequestMade === true,
+      },
     });
   }
 

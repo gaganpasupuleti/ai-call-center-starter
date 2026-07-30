@@ -160,6 +160,19 @@ export function getConfig(overrides = {}) {
           60,
       ),
     },
+    outbound: {
+      ttsProvider:
+        overrides.outbound?.ttsProvider ??
+        process.env.OUTBOUND_TTS_PROVIDER ??
+        'edge',
+      ttsVoice:
+        overrides.outbound?.ttsVoice ??
+        process.env.OUTBOUND_TTS_VOICE ??
+        'en-US-JennyNeural',
+      dialerLive:
+        overrides.outbound?.dialerLive ??
+        envFlag('OUTBOUND_DIALER_LIVE', false),
+    },
   };
 }
 

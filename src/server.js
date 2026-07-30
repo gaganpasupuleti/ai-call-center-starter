@@ -7,10 +7,12 @@ import { StreamSessionManager } from './streaming/session-manager.js';
 import { CallStationTracker } from './streaming/call-station-tracker.js';
 import { attachVoiceStreaming } from './streaming/websocket-gateway.js';
 import { STREAM_PATH } from './streaming/constants.js';
+import { getOutboundPromptStore } from './streaming/outbound/prompt-store.js';
 
 const config = getConfig();
 const repository = new Repository(config.databasePath);
 const provider = createProvider(config);
+const promptStore = getOutboundPromptStore();
 const callStation = new CallStationTracker({
   repository,
   config: config.smartPing,
@@ -19,11 +21,19 @@ const sessionManager = new StreamSessionManager({
   repository,
   config: config.smartPing,
   callStation,
+  promptStore,
 });
 callStation.setSessionManager(sessionManager);
 const acceptingConnections = { current: true };
 const server = http.createServer(
-  createApp({ repository, provider, config, sessionManager, callStation }),
+  createApp({
+    repository,
+    provider,
+    config,
+    sessionManager,
+    callStation,
+    promptStore,
+  }),
 );
 
 const { pathname } = attachVoiceStreaming({

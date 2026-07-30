@@ -73,9 +73,13 @@ async function api(path, options = {}) {
 }
 
 function setActiveNav(route) {
-  $$('.nav a').forEach((link) => {
-    link.classList.toggle('active', link.dataset.route === route);
+  $$('.pill-track a').forEach((link) => {
+    const active = link.dataset.route === route;
+    link.classList.toggle('active', active);
+    link.setAttribute('aria-selected', active ? 'true' : 'false');
   });
+  const select = $('#nav-select');
+  if (select && select.value !== route) select.value = route;
 }
 
 function openModal(title, html) {
@@ -1187,14 +1191,217 @@ async function renderCallStation() {
   startCallStationPolling();
 }
 
+async function renderOutbound() {
+  stopCallStationPolling();
+  const root = $('#page-root');
+  root.innerHTML = loadingState();
+  let health;
+  try {
+    health = await api('/api/outbound/health');
+  } catch (error) {
+    root.innerHTML = emptyState(error.message);
+    throw error;
+  }
+
+  const gatesOpen = health.liveGatesOpen === true;
+  const ttsReady = health.tts?.ready === true;
+  root.innerHTML = `
+    <section class="admin-section outbound-admin">
+      <div class="admin-toolbar">
+        <div class="admin-toolbar-copy">
+          <h3>Outbound Dialer</h3>
+          <p>Compose a spoken message and dial one number. Preview is safe; Place call requires confirmation.</p>
+        </div>
+        <button type="button" class="admin-btn ghost" id="outbound-refresh">Refresh status</button>
+      </div>
+
+      <div class="admin-pane">
+        <div class="admin-pane-header">Compose call</div>
+        <div class="admin-pane-body">
+          <div class="admin-status-row">
+            <span class="admin-chip ${gatesOpen ? 'ok' : 'warn'}">${gatesOpen ? 'Dialer ready' : 'Dialer locked'}</span>
+            <span class="admin-chip ${ttsReady ? 'ok' : 'danger'}">TTS ${ttsReady ? 'ready' : 'not ready'}</span>
+            <span class="admin-chip">DID ${escapeHtml(health.didMasked || '—')}</span>
+            <span class="admin-chip muted">${escapeHtml(health.liveCallMessage || '')}</span>
+          </div>
+
+          ${
+            gatesOpen
+              ? ''
+              : `<div class="admin-alert">
+                  Live dialing is disabled until <code>OUTBOUND_DIALER_LIVE=true</code> is set with SmartPing credentials.
+                </div>`
+          }
+
+          <form class="admin-compose" id="outbound-form">
+            <div class="admin-field">
+              <label for="outbound-phone">Phone number</label>
+              <input
+                id="outbound-phone"
+                name="phone"
+                inputmode="numeric"
+                autocomplete="tel"
+                placeholder="10-digit mobile (e.g. 98XXXXXXXX)"
+                required
+              />
+            </div>
+            <div class="admin-field">
+              <label for="outbound-message">Message to speak</label>
+              <textarea
+                id="outbound-message"
+                name="message"
+                maxlength="500"
+                rows="4"
+                placeholder="Hi, hello! How are you doing today?"
+                required
+              ></textarea>
+              <p class="admin-hint"><span id="outbound-count">0</span> / 500</p>
+            </div>
+            <div class="admin-field admin-field-inline">
+              <label for="outbound-repeat">Repeat message</label>
+              <select id="outbound-repeat" name="repeat">
+                ${[1, 2, 3, 4, 5]
+                  .map((n) => `<option value="${n}" ${n === 1 ? 'selected' : ''}>${n} time${n > 1 ? 's' : ''}</option>`)
+                  .join('')}
+              </select>
+            </div>
+            <label class="admin-confirm">
+              <input type="checkbox" id="outbound-confirm" ${gatesOpen ? '' : 'disabled'} />
+              <span>I confirm placing one live call to this number with this message.</span>
+            </label>
+            <div class="admin-actions">
+              <button type="button" class="admin-btn ghost" id="outbound-preview">Preview</button>
+              <button type="button" class="admin-btn primary" id="outbound-call" disabled>
+                Place call
+              </button>
+            </div>
+          </form>
+
+          <div id="outbound-result" class="admin-result" hidden></div>
+        </div>
+      </div>
+    </section>
+  `;
+
+  const phoneInput = $('#outbound-phone');
+  const messageInput = $('#outbound-message');
+  const repeatInput = $('#outbound-repeat');
+  const confirmInput = $('#outbound-confirm');
+  const callBtn = $('#outbound-call');
+  const resultHost = $('#outbound-result');
+  const countEl = $('#outbound-count');
+
+  function syncCallButton() {
+    const ready =
+      gatesOpen &&
+      confirmInput.checked &&
+      phoneInput.value.trim().length >= 10 &&
+      messageInput.value.trim().length > 0 &&
+      ttsReady;
+    callBtn.disabled = !ready;
+  }
+
+  function syncCount() {
+    countEl.textContent = String(messageInput.value.length);
+  }
+
+  confirmInput.addEventListener('change', syncCallButton);
+  phoneInput.addEventListener('input', syncCallButton);
+  messageInput.addEventListener('input', () => {
+    syncCount();
+    syncCallButton();
+  });
+  syncCount();
+  syncCallButton();
+
+  $('#outbound-refresh').addEventListener('click', () => {
+    renderOutbound().catch((error) => showNotice(error.message, 'error'));
+  });
+
+  function showResult(title, rows) {
+    resultHost.hidden = false;
+    resultHost.innerHTML = `
+      <strong>${escapeHtml(title)}</strong>
+      ${rows.map((row) => `<div>${escapeHtml(row)}</div>`).join('')}
+    `;
+  }
+
+  $('#outbound-preview').addEventListener('click', async () => {
+    try {
+      clearNotice();
+      const result = await api('/api/outbound/preview', {
+        method: 'POST',
+        body: JSON.stringify({
+          phoneNumber: phoneInput.value.trim(),
+          message: messageInput.value,
+          repeatCount: Number(repeatInput.value || 1),
+        }),
+      });
+      showNotice('Preview ready — no network call was made.');
+      showResult('Preview', [
+        `Destination ${result.phoneMasked || '—'}`,
+        `Message length ${result.messageLength}`,
+        `Repeat ${result.repeatCount}`,
+        result.audio?.durationSeconds != null
+          ? `Audio ~${result.audio.durationSeconds}s (${result.audio.provider || 'tts'})`
+          : `Audio unavailable (${result.audio?.error || 'tts not ready'})`,
+        `Token configured: ${result.preview?.tokenConfigured ? 'yes' : 'no'}`,
+      ]);
+    } catch (error) {
+      showNotice(error.message, 'error');
+    }
+  });
+
+  callBtn.addEventListener('click', async () => {
+    try {
+      clearNotice();
+      if (!gatesOpen || !confirmInput.checked) {
+        showNotice('Confirm the call and ensure the dialer is unlocked.', 'error');
+        return;
+      }
+      callBtn.disabled = true;
+      callBtn.textContent = 'Placing…';
+      const result = await api('/api/outbound/call', {
+        method: 'POST',
+        body: JSON.stringify({
+          phoneNumber: phoneInput.value.trim(),
+          message: messageInput.value,
+          repeatCount: Number(repeatInput.value || 1),
+          confirm: true,
+        }),
+      });
+      showNotice(
+        result.networkRequestMade
+          ? `Call accepted (HTTP ${result.httpStatus ?? '—'}).`
+          : 'Call path returned without a network request.',
+        'success',
+      );
+      showResult('Call result', [
+        `Destination ${result.phoneMasked || '—'}`,
+        `App call id ${result.appCallId || '—'}`,
+        `Call Station ref ${result.stationRef || '—'}`,
+        `Network request: ${result.networkRequestMade ? 'yes' : 'no'}`,
+        `Provider HTTP: ${result.httpStatus ?? '—'}`,
+        `Audio ~${result.audio?.durationSeconds ?? '—'}s`,
+      ]);
+    } catch (error) {
+      showNotice(error.message, 'error');
+    } finally {
+      callBtn.textContent = 'Place call';
+      syncCallButton();
+    }
+  });
+}
+
 const titles = {
   dashboard: ['Overview', 'Dashboard'],
   leads: ['Contacts', 'Leads'],
   campaigns: ['Outbound', 'Campaigns'],
   calls: ['Activity', 'Calls'],
+  outbound: ['Compose', 'Outbound'],
   'call-station': ['Monitoring', 'Call Station'],
   'follow-ups': ['Outbox', 'Follow-ups'],
-  settings: ['Configuration', 'Provider Settings'],
+  settings: ['Configuration', 'Settings'],
 };
 
 async function renderRoute() {
@@ -1214,6 +1421,7 @@ async function renderRoute() {
     else if (route === 'leads') await renderLeads();
     else if (route === 'campaigns') await renderCampaigns();
     else if (route === 'calls') await renderCalls();
+    else if (route === 'outbound') await renderOutbound();
     else if (route === 'call-station') await renderCallStation();
     else if (route === 'follow-ups') await renderFollowUps();
     else if (route === 'settings') await renderSettings();
@@ -1262,6 +1470,11 @@ document.addEventListener('click', async (event) => {
 
 $('#refresh-btn').addEventListener('click', () => {
   renderRoute().catch((error) => showNotice(error.message, 'error'));
+});
+
+$('#nav-select')?.addEventListener('change', (event) => {
+  const route = event.target.value;
+  window.location.hash = `#/${route}`;
 });
 
 window.addEventListener('hashchange', () => {
