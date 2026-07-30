@@ -175,6 +175,43 @@ export class Repository {
         metadata_json TEXT,
         created_at TEXT NOT NULL
       );
+
+      CREATE TABLE IF NOT EXISTS stream_test_calls (
+        id TEXT PRIMARY KEY,
+        public_ref TEXT NOT NULL UNIQUE,
+        session_id TEXT,
+        provider_call_id TEXT,
+        stream_sid TEXT,
+        call_sid TEXT,
+        app_call_id TEXT,
+        destination_masked TEXT,
+        did_masked TEXT,
+        status TEXT NOT NULL,
+        requested_at TEXT,
+        initiated_at TEXT,
+        ringing_at TEXT,
+        answered_at TEXT,
+        streaming_at TEXT,
+        ended_at TEXT,
+        duration_seconds REAL,
+        ws_accepted INTEGER,
+        ws_opened_at TEXT,
+        ws_closed_at TEXT,
+        ws_close_code INTEGER,
+        protocol_events_json TEXT,
+        audio_status TEXT,
+        audio_queued_at TEXT,
+        audio_completed_at TEXT,
+        audio_error TEXT,
+        webhook_received_at TEXT,
+        webhook_duplicate INTEGER,
+        webhook_status TEXT,
+        failure_category TEXT,
+        timeline_json TEXT,
+        metadata_json TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
     `);
 
     this.ensureColumn('calls', 'interpreted_response', 'TEXT');
@@ -193,7 +230,7 @@ export class Repository {
 
     this.db
       .prepare(
-        `INSERT INTO schema_meta (key, value) VALUES ('version', '3')
+        `INSERT INTO schema_meta (key, value) VALUES ('version', '4')
          ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
       )
       .run();
@@ -1293,5 +1330,272 @@ export class Repository {
       phoneHash: input.phoneHash ?? null,
       createdAt: timestamp,
     };
+  }
+
+  #mapStreamTestCall(row) {
+    if (!row) return null;
+    return {
+      ...row,
+      protocol_events: parseJson(row.protocol_events_json, {}),
+      timeline: parseJson(row.timeline_json, []),
+      metadata: parseJson(row.metadata_json, {}),
+    };
+  }
+
+  createStreamTestCall(input = {}) {
+    const id = input.id || randomUUID();
+    const timestamp = now();
+    const publicRef =
+      input.publicRef || `TC-${id.replace(/-/g, '').slice(0, 10)}`;
+    this.db
+      .prepare(`
+        INSERT INTO stream_test_calls (
+          id, public_ref, session_id, provider_call_id, stream_sid, call_sid, app_call_id,
+          destination_masked, did_masked, status,
+          requested_at, initiated_at, ringing_at, answered_at, streaming_at, ended_at,
+          duration_seconds, ws_accepted, ws_opened_at, ws_closed_at, ws_close_code,
+          protocol_events_json, audio_status, audio_queued_at, audio_completed_at, audio_error,
+          webhook_received_at, webhook_duplicate, webhook_status, failure_category,
+          timeline_json, metadata_json, created_at, updated_at
+        ) VALUES (
+          ?, ?, ?, ?, ?, ?, ?,
+          ?, ?, ?,
+          ?, ?, ?, ?, ?, ?,
+          ?, ?, ?, ?, ?,
+          ?, ?, ?, ?, ?,
+          ?, ?, ?, ?,
+          ?, ?, ?, ?
+        )
+      `)
+      .run(
+        id,
+        publicRef,
+        input.sessionId ?? null,
+        input.providerCallId ?? null,
+        input.streamSid ?? null,
+        input.callSid ?? null,
+        input.appCallId ?? null,
+        input.destinationMasked ?? null,
+        input.didMasked ?? null,
+        input.status ?? 'unknown',
+        input.requestedAt ?? null,
+        input.initiatedAt ?? null,
+        input.ringingAt ?? null,
+        input.answeredAt ?? null,
+        input.streamingAt ?? null,
+        input.endedAt ?? null,
+        input.durationSeconds ?? null,
+        input.wsAccepted === true || input.wsAccepted === 1 ? 1 : input.wsAccepted === false ? 0 : null,
+        input.wsOpenedAt ?? null,
+        input.wsClosedAt ?? null,
+        input.wsCloseCode ?? null,
+        JSON.stringify(input.protocolEvents ?? {}),
+        input.audioStatus ?? null,
+        input.audioQueuedAt ?? null,
+        input.audioCompletedAt ?? null,
+        input.audioError ?? null,
+        input.webhookReceivedAt ?? null,
+        input.webhookDuplicate ? 1 : 0,
+        input.webhookStatus ?? null,
+        input.failureCategory ?? null,
+        JSON.stringify(input.timeline ?? []),
+        JSON.stringify(input.metadata ?? {}),
+        timestamp,
+        timestamp,
+      );
+    return this.getStreamTestCall(id);
+  }
+
+  getStreamTestCall(id) {
+    const row = this.db
+      .prepare('SELECT * FROM stream_test_calls WHERE id = ?')
+      .get(id);
+    return this.#mapStreamTestCall(row);
+  }
+
+  getStreamTestCallByPublicRef(publicRef) {
+    const row = this.db
+      .prepare('SELECT * FROM stream_test_calls WHERE public_ref = ? OR id = ?')
+      .get(publicRef, publicRef);
+    return this.#mapStreamTestCall(row);
+  }
+
+  findStreamTestCall({
+    streamSid,
+    callSid,
+    appCallId,
+    sessionId,
+    providerCallId,
+  } = {}) {
+    if (sessionId) {
+      const bySession = this.db
+        .prepare('SELECT * FROM stream_test_calls WHERE session_id = ? ORDER BY created_at DESC')
+        .get(sessionId);
+      if (bySession) return this.#mapStreamTestCall(bySession);
+    }
+    if (streamSid) {
+      const byStream = this.db
+        .prepare('SELECT * FROM stream_test_calls WHERE stream_sid = ? ORDER BY created_at DESC')
+        .get(streamSid);
+      if (byStream) return this.#mapStreamTestCall(byStream);
+    }
+    if (callSid) {
+      const byCall = this.db
+        .prepare(
+          `SELECT * FROM stream_test_calls
+           WHERE call_sid = ? OR provider_call_id = ?
+           ORDER BY created_at DESC`,
+        )
+        .get(callSid, callSid);
+      if (byCall) return this.#mapStreamTestCall(byCall);
+    }
+    if (appCallId) {
+      const byApp = this.db
+        .prepare('SELECT * FROM stream_test_calls WHERE app_call_id = ? ORDER BY created_at DESC')
+        .get(appCallId);
+      if (byApp) return this.#mapStreamTestCall(byApp);
+    }
+    if (providerCallId) {
+      const byProvider = this.db
+        .prepare(
+          'SELECT * FROM stream_test_calls WHERE provider_call_id = ? ORDER BY created_at DESC',
+        )
+        .get(providerCallId);
+      if (byProvider) return this.#mapStreamTestCall(byProvider);
+    }
+    return null;
+  }
+
+  updateStreamTestCall(id, patch = {}) {
+    const existing = this.getStreamTestCall(id);
+    if (!existing) return null;
+    const timestamp = now();
+    this.db
+      .prepare(`
+        UPDATE stream_test_calls SET
+          provider_call_id = ?,
+          stream_sid = ?,
+          call_sid = ?,
+          app_call_id = ?,
+          destination_masked = ?,
+          did_masked = ?,
+          status = ?,
+          requested_at = ?,
+          initiated_at = ?,
+          ringing_at = ?,
+          answered_at = ?,
+          streaming_at = ?,
+          ended_at = ?,
+          duration_seconds = ?,
+          ws_accepted = ?,
+          ws_opened_at = ?,
+          ws_closed_at = ?,
+          ws_close_code = ?,
+          protocol_events_json = ?,
+          audio_status = ?,
+          audio_queued_at = ?,
+          audio_completed_at = ?,
+          audio_error = ?,
+          webhook_received_at = ?,
+          webhook_duplicate = ?,
+          webhook_status = ?,
+          failure_category = ?,
+          timeline_json = ?,
+          metadata_json = ?,
+          updated_at = ?
+        WHERE id = ?
+      `)
+      .run(
+        patch.providerCallId ?? existing.provider_call_id,
+        patch.streamSid ?? existing.stream_sid,
+        patch.callSid ?? existing.call_sid,
+        patch.appCallId ?? existing.app_call_id,
+        patch.destinationMasked ?? existing.destination_masked,
+        patch.didMasked ?? existing.did_masked,
+        patch.status ?? existing.status,
+        patch.requestedAt ?? existing.requested_at,
+        patch.initiatedAt ?? existing.initiated_at,
+        patch.ringingAt ?? existing.ringing_at,
+        patch.answeredAt ?? existing.answered_at,
+        patch.streamingAt ?? existing.streaming_at,
+        patch.endedAt ?? existing.ended_at,
+        patch.durationSeconds ?? existing.duration_seconds,
+        patch.wsAccepted === true || patch.wsAccepted === 1
+          ? 1
+          : patch.wsAccepted === false || patch.wsAccepted === 0
+            ? 0
+            : existing.ws_accepted,
+        patch.wsOpenedAt ?? existing.ws_opened_at,
+        patch.wsClosedAt ?? existing.ws_closed_at,
+        patch.wsCloseCode ?? existing.ws_close_code,
+        JSON.stringify(patch.protocolEvents ?? existing.protocol_events ?? {}),
+        patch.audioStatus ?? existing.audio_status,
+        patch.audioQueuedAt ?? existing.audio_queued_at,
+        patch.audioCompletedAt ?? existing.audio_completed_at,
+        patch.audioError ?? existing.audio_error,
+        patch.webhookReceivedAt ?? existing.webhook_received_at,
+        patch.webhookDuplicate === true || patch.webhookDuplicate === 1
+          ? 1
+          : patch.webhookDuplicate === false || patch.webhookDuplicate === 0
+            ? 0
+            : existing.webhook_duplicate,
+        patch.webhookStatus ?? existing.webhook_status,
+        patch.failureCategory ?? existing.failure_category,
+        JSON.stringify(patch.timeline ?? existing.timeline ?? []),
+        JSON.stringify(patch.metadata ?? existing.metadata ?? {}),
+        timestamp,
+        id,
+      );
+    return this.getStreamTestCall(id);
+  }
+
+  listStreamTestCalls(filters = {}) {
+    let rows = this.db
+      .prepare('SELECT * FROM stream_test_calls ORDER BY created_at DESC')
+      .all()
+      .map((row) => this.#mapStreamTestCall(row));
+
+    if (filters.status) {
+      const status = String(filters.status).toLowerCase();
+      rows = rows.filter((row) => String(row.status).toLowerCase() === status);
+    }
+    if (filters.outcome === 'completed') {
+      rows = rows.filter((row) => row.status === 'completed');
+    }
+    if (filters.outcome === 'failed') {
+      rows = rows.filter((row) =>
+        ['failed', 'rejected'].includes(String(row.status).toLowerCase()),
+      );
+    }
+    if (filters.websocket === 'accepted') {
+      rows = rows.filter((row) => row.ws_accepted === 1);
+    }
+    if (filters.websocket === 'rejected') {
+      rows = rows.filter((row) => row.ws_accepted === 0);
+    }
+    if (filters.webhook === 'received') {
+      rows = rows.filter((row) => Boolean(row.webhook_received_at));
+    }
+    if (filters.webhook === 'missing') {
+      rows = rows.filter((row) => !row.webhook_received_at);
+    }
+    if (filters.q) {
+      const q = String(filters.q).toLowerCase();
+      rows = rows.filter(
+        (row) =>
+          String(row.public_ref || '').toLowerCase().includes(q) ||
+          String(row.id || '').toLowerCase().includes(q) ||
+          String(row.stream_sid || '').toLowerCase().includes(q),
+      );
+    }
+    if (filters.from) {
+      const from = Date.parse(filters.from);
+      rows = rows.filter((row) => Date.parse(row.created_at) >= from);
+    }
+    if (filters.to) {
+      const to = Date.parse(filters.to);
+      rows = rows.filter((row) => Date.parse(row.created_at) <= to);
+    }
+    return rows;
   }
 }

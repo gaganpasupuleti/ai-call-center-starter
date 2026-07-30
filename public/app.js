@@ -4,6 +4,21 @@ const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
 const state = {
   provider: 'mock',
   loading: false,
+  callStation: {
+    pollTimer: null,
+    connection: 'offline',
+    seenLogKeys: new Set(),
+    filters: {
+      from: '',
+      to: '',
+      status: '',
+      outcome: '',
+      websocket: '',
+      webhook: '',
+      q: '',
+    },
+    lastItems: [],
+  },
 };
 
 function escapeHtml(value) {
@@ -800,11 +815,384 @@ async function simulateCall(callId, status, selectedDigit = null) {
   await renderRoute();
 }
 
+function stopCallStationPolling() {
+  if (state.callStation.pollTimer) {
+    clearInterval(state.callStation.pollTimer);
+    state.callStation.pollTimer = null;
+  }
+}
+
+function setCallStationConnection(status) {
+  state.callStation.connection = status;
+  const pill = $('#station-live-pill');
+  if (!pill) return;
+  pill.className = `live-pill ${status}`;
+  pill.textContent =
+    status === 'live'
+      ? 'Live'
+      : status === 'reconnecting'
+        ? 'Reconnecting'
+        : 'Offline';
+}
+
+function stationDuration(seconds) {
+  if (seconds === null || seconds === undefined || Number.isNaN(Number(seconds))) {
+    return '—';
+  }
+  const n = Number(seconds);
+  if (n < 60) return `${n.toFixed(1)}s`;
+  const mins = Math.floor(n / 60);
+  const secs = (n % 60).toFixed(0);
+  return `${mins}m ${secs}s`;
+}
+
+function stationStatusBadge(status) {
+  const value = String(status ?? 'Unknown');
+  const lower = value.toLowerCase();
+  let kind = '';
+  if (['completed', 'answered', 'streaming'].includes(lower)) kind = 'ok';
+  if (['ringing', 'initiated', 'requested'].includes(lower)) kind = 'warn';
+  if (['failed', 'rejected'].includes(lower)) kind = 'danger';
+  return `<span class="badge ${kind}">${escapeHtml(value)}</span>`;
+}
+
+function readStationFiltersFromDom() {
+  const root = $('#page-root');
+  if (!root) return state.callStation.filters;
+  const get = (id) => $(`#${id}`, root)?.value ?? '';
+  state.callStation.filters = {
+    from: get('station-from'),
+    to: get('station-to'),
+    status: get('station-status'),
+    outcome: get('station-outcome'),
+    websocket: get('station-websocket'),
+    webhook: get('station-webhook'),
+    q: get('station-q'),
+  };
+  return state.callStation.filters;
+}
+
+function stationQueryString(filters) {
+  const params = new URLSearchParams();
+  for (const [key, value] of Object.entries(filters)) {
+    if (value) params.set(key, value);
+  }
+  const qs = params.toString();
+  return qs ? `?${qs}` : '';
+}
+
+function renderStationSkeleton() {
+  return `
+    <div class="skeleton-row"></div>
+    <div class="skeleton-row"></div>
+    <div class="skeleton-row"></div>
+  `;
+}
+
+function appendStationActivity(message) {
+  const log = $('#station-activity-log');
+  if (!log) return;
+  const key = `${message}`;
+  if (state.callStation.seenLogKeys.has(key)) return;
+  state.callStation.seenLogKeys.add(key);
+  const item = document.createElement('div');
+  item.className = 'muted';
+  item.textContent = `${new Date().toLocaleTimeString()} · ${message}`;
+  log.prepend(item);
+  while (log.children.length > 40) log.lastChild.remove();
+}
+
+function renderStationCallsTable(items) {
+  if (!items || items.length === 0) {
+    return `<div class="empty">No monitored test calls yet.</div>`;
+  }
+  return `
+    <div class="table-wrap">
+      <table class="station-table">
+        <thead>
+          <tr>
+            <th>Call ref</th>
+            <th>Destination</th>
+            <th>DID</th>
+            <th>Started</th>
+            <th>Answered</th>
+            <th>Ended</th>
+            <th>Duration</th>
+            <th>Status</th>
+            <th>Audio</th>
+            <th>WebSocket</th>
+            <th>Webhook</th>
+            <th>Keypad</th>
+            <th>Failure</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${items
+            .map(
+              (row) => `<tr class="station-row" data-station-id="${escapeHtml(row.id)}" tabindex="0" role="button">
+                <td class="mono">${escapeHtml(row.id)}</td>
+                <td>${escapeHtml(row.destinationMasked ?? '—')}</td>
+                <td>${escapeHtml(row.didMasked ?? '—')}</td>
+                <td>${escapeHtml(formatDate(row.requestedAt || row.initiatedAt || row.streamingAt))}</td>
+                <td>${escapeHtml(formatDate(row.answeredAt))}</td>
+                <td>${escapeHtml(formatDate(row.endedAt))}</td>
+                <td>${escapeHtml(stationDuration(row.durationSeconds))}</td>
+                <td>${stationStatusBadge(row.status)}</td>
+                <td>${escapeHtml(row.audio?.status ?? 'Unknown')}</td>
+                <td>${escapeHtml(row.websocket?.result ?? 'unknown')}</td>
+                <td>${escapeHtml(row.webhook?.result ?? 'missing')}</td>
+                <td>${escapeHtml(row.keypadOption ?? 'Not supported')}</td>
+                <td>${escapeHtml(row.failureReason ?? '—')}</td>
+              </tr>`,
+            )
+            .join('')}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+function timelineDelta(prevTs, ts) {
+  if (!prevTs || !ts) return '';
+  const ms = Date.parse(ts) - Date.parse(prevTs);
+  if (!Number.isFinite(ms) || ms < 0) return '';
+  return `<span class="station-delta">+${(ms / 1000).toFixed(3)}s</span>`;
+}
+
+async function showStationCallDetails(id) {
+  const call = await api(`/api/call-station/calls/${encodeURIComponent(id)}`);
+  const timeline = Array.isArray(call.timeline) ? call.timeline : [];
+  openModal(
+    `Call ${call.id}`,
+    `
+      <div class="station-drawer-meta">
+        <div><span>Status</span><br>${stationStatusBadge(call.status)}</div>
+        <div><span>Duration</span><br>${escapeHtml(stationDuration(call.durationSeconds))}</div>
+        <div><span>Destination</span><br>${escapeHtml(call.destinationMasked ?? '—')}</div>
+        <div><span>DID</span><br>${escapeHtml(call.didMasked ?? '—')}</div>
+        <div><span>WebSocket</span><br>${escapeHtml(call.websocket?.result ?? 'unknown')} ${call.websocket?.closeCode != null ? `(${escapeHtml(call.websocket.closeCode)})` : ''}</div>
+        <div><span>Webhook</span><br>${escapeHtml(call.webhook?.result ?? 'missing')}</div>
+        <div><span>Audio</span><br>${escapeHtml(call.audio?.status ?? 'Unknown')}</div>
+        <div><span>Keypad</span><br>${escapeHtml(call.keypadOption ?? 'Not supported')}</div>
+      </div>
+      <h4>Event timeline</h4>
+      <div class="timeline">
+        ${
+          timeline.length === 0
+            ? `<p class="muted">No timeline events recorded.</p>`
+            : timeline
+                .map((item, index) => {
+                  const prev = timeline[index - 1];
+                  return `<article>
+                    <h4>${escapeHtml(item.event)}${timelineDelta(prev?.ts, item.ts)}</h4>
+                    <p>${escapeHtml(formatDate(item.ts))}${item.detail ? ` · ${escapeHtml(item.detail)}` : ''}</p>
+                  </article>`;
+                })
+                .join('')
+        }
+      </div>
+    `,
+  );
+}
+
+async function refreshCallStationData({ quiet = false } = {}) {
+  const filters = readStationFiltersFromDom();
+  setCallStationConnection('reconnecting');
+  try {
+    const [summary, health, calls] = await Promise.all([
+      api('/api/call-station/summary'),
+      api('/api/call-station/health'),
+      api(`/api/call-station/calls${stationQueryString(filters)}`),
+    ]);
+    setCallStationConnection('live');
+    state.callStation.lastItems = calls.items ?? [];
+
+    const setStat = (id, value) => {
+      const el = $(id);
+      if (el) el.textContent = value;
+    };
+    setStat('#stat-total', summary.totalTestCalls ?? 0);
+    setStat('#stat-ringing', summary.ringing ?? 0);
+    setStat('#stat-answered', summary.answered ?? 0);
+    setStat('#stat-completed', summary.completed ?? 0);
+    setStat('#stat-failed', summary.failed ?? 0);
+    setStat(
+      '#stat-avg-duration',
+      summary.averageCallDurationSeconds == null
+        ? '—'
+        : stationDuration(summary.averageCallDurationSeconds),
+    );
+    setStat('#stat-active-ws', summary.activeWebSocketSessions ?? 0);
+    setStat(
+      '#stat-webhook-rate',
+      summary.webhookSuccessRate == null
+        ? '—'
+        : formatPercent(summary.webhookSuccessRate),
+    );
+
+    const tableHost = $('#station-table-host');
+    if (tableHost) tableHost.innerHTML = renderStationCallsTable(calls.items ?? []);
+
+    const gateHost = $('#station-gate-host');
+    if (gateHost) {
+      gateHost.innerHTML = `
+        <div class="gate-item"><span>Destination</span><strong>${escapeHtml(health.destinationMasked || 'Not configured')}</strong></div>
+        <div class="gate-item"><span>Playback mode</span><strong>${escapeHtml(health.playbackMode || '—')}</strong></div>
+        <div class="gate-item"><span>Dry-run</span><strong>${health.dryRun ? 'On' : 'Off'}</strong></div>
+        <div class="gate-item"><span>Live-calls gate</span><strong>${health.liveCallsEnabled ? 'Enabled' : 'Disabled'}</strong></div>
+        <div class="gate-item"><span>Single-call gate</span><strong>${health.singleCallEnabled ? 'Enabled' : 'Disabled'}</strong></div>
+        <div class="gate-item"><span>Stream URL</span><strong>${health.streamUrlConfigured ? 'Configured' : 'Missing'}</strong></div>
+        <div class="gate-item"><span>Audio readiness</span><strong>${health.audio?.ready ? `Ready (${health.audio.durationSeconds}s)` : `Not ready (${health.audio?.error || 'unknown'})`}</strong></div>
+      `;
+    }
+
+    appendStationActivity(
+      `Polled ${calls.items?.length ?? 0} call(s); active WS ${summary.activeWebSocketSessions ?? 0}`,
+    );
+    return true;
+  } catch (error) {
+    setCallStationConnection('offline');
+    if (!quiet) showNotice(error.message, 'error');
+    appendStationActivity(`Poll failed: ${error.message}`);
+    const tableHost = $('#station-table-host');
+    if (tableHost && !state.callStation.lastItems.length) {
+      tableHost.innerHTML = emptyState(error.message);
+    }
+    return false;
+  }
+}
+
+function startCallStationPolling() {
+  stopCallStationPolling();
+  state.callStation.pollTimer = setInterval(() => {
+    if (document.hidden) return;
+    const route = (window.location.hash || '').replace(/^#\//, '').split('?')[0];
+    if (route !== 'call-station') {
+      stopCallStationPolling();
+      return;
+    }
+    refreshCallStationData({ quiet: true }).catch(() => {});
+  }, 5000);
+}
+
+async function renderCallStation() {
+  stopCallStationPolling();
+  state.callStation.seenLogKeys = new Set();
+  const f = state.callStation.filters;
+  const root = $('#page-root');
+  root.innerHTML = `
+    <div class="toolbar" style="justify-content:space-between">
+      <div>
+        <p class="muted" style="margin:0">Privacy-safe Stage 1 stream monitoring. Polls every 5s while this tab is visible.</p>
+      </div>
+      <span id="station-live-pill" class="live-pill offline">Offline</span>
+    </div>
+
+    <section class="grid-stats station-stats">
+      <article class="stat-card"><span>Total test calls</span><strong id="stat-total">—</strong></article>
+      <article class="stat-card"><span>Ringing</span><strong id="stat-ringing">—</strong></article>
+      <article class="stat-card"><span>Answered</span><strong id="stat-answered">—</strong></article>
+      <article class="stat-card"><span>Completed</span><strong id="stat-completed">—</strong></article>
+      <article class="stat-card"><span>Failed</span><strong id="stat-failed">—</strong></article>
+      <article class="stat-card"><span>Avg duration</span><strong id="stat-avg-duration">—</strong></article>
+      <article class="stat-card"><span>Active WebSocket sessions</span><strong id="stat-active-ws">—</strong></article>
+      <article class="stat-card"><span>Webhook success rate</span><strong id="stat-webhook-rate">—</strong></article>
+    </section>
+
+    <article class="card">
+      <div class="card-header"><div><h3>Filters</h3><p>Date range, status, and sanitized call reference</p></div></div>
+      <div class="station-filters">
+        <label>From<input id="station-from" type="datetime-local" value="${escapeHtml(f.from)}" /></label>
+        <label>To<input id="station-to" type="datetime-local" value="${escapeHtml(f.to)}" /></label>
+        <label>Status
+          <select id="station-status">
+            <option value="">Any</option>
+            ${['requested','initiated','ringing','answered','streaming','completed','failed','rejected','unknown']
+              .map(
+                (s) =>
+                  `<option value="${s}" ${f.status === s ? 'selected' : ''}>${s}</option>`,
+              )
+              .join('')}
+          </select>
+        </label>
+        <label>Outcome
+          <select id="station-outcome">
+            <option value="">Any</option>
+            <option value="completed" ${f.outcome === 'completed' ? 'selected' : ''}>Completed</option>
+            <option value="failed" ${f.outcome === 'failed' ? 'selected' : ''}>Failed</option>
+          </select>
+        </label>
+        <label>WebSocket
+          <select id="station-websocket">
+            <option value="">Any</option>
+            <option value="accepted" ${f.websocket === 'accepted' ? 'selected' : ''}>Accepted</option>
+            <option value="rejected" ${f.websocket === 'rejected' ? 'selected' : ''}>Rejected</option>
+          </select>
+        </label>
+        <label>Webhook
+          <select id="station-webhook">
+            <option value="">Any</option>
+            <option value="received" ${f.webhook === 'received' ? 'selected' : ''}>Received</option>
+            <option value="missing" ${f.webhook === 'missing' ? 'selected' : ''}>Missing</option>
+          </select>
+        </label>
+        <label class="full">Search call ref<input id="station-q" type="search" placeholder="TC-…" value="${escapeHtml(f.q)}" /></label>
+        <div class="filter-actions">
+          <button type="button" id="station-apply-filters">Apply</button>
+          <button type="button" class="secondary" id="station-reset-filters">Reset</button>
+        </div>
+      </div>
+    </article>
+
+    <article class="card">
+      <div class="card-header"><div><h3>Recent calls</h3><p>Click a row for the chronological event timeline</p></div></div>
+      <div id="station-table-host">${renderStationSkeleton()}</div>
+    </article>
+
+    <article class="card">
+      <div class="card-header"><div><h3>Live activity</h3><p>Deduplicated poll updates</p></div></div>
+      <div id="station-activity-log" class="timeline"></div>
+    </article>
+
+    <details class="panel-collapse">
+      <summary>Controlled Test Call</summary>
+      <div class="panel-body">
+        <p class="muted">Execution stays disabled until the backend independently confirms every safety gate. The API token is never accepted or displayed here.</p>
+        <div id="station-gate-host" class="gate-grid">${renderStationSkeleton()}</div>
+        <button type="button" disabled title="Live test calls require server-side approval.">
+          Place test call
+        </button>
+        <p class="muted">Live test calls require server-side approval.</p>
+      </div>
+    </details>
+  `;
+
+  $('#station-apply-filters')?.addEventListener('click', () => {
+    refreshCallStationData().catch((error) => showNotice(error.message, 'error'));
+  });
+  $('#station-reset-filters')?.addEventListener('click', () => {
+    state.callStation.filters = {
+      from: '',
+      to: '',
+      status: '',
+      outcome: '',
+      websocket: '',
+      webhook: '',
+      q: '',
+    };
+    renderCallStation().catch((error) => showNotice(error.message, 'error'));
+  });
+
+  await refreshCallStationData();
+  startCallStationPolling();
+}
+
 const titles = {
   dashboard: ['Overview', 'Dashboard'],
   leads: ['Contacts', 'Leads'],
   campaigns: ['Outbound', 'Campaigns'],
   calls: ['Activity', 'Calls'],
+  'call-station': ['Monitoring', 'Call Station'],
   'follow-ups': ['Outbox', 'Follow-ups'],
   settings: ['Configuration', 'Provider Settings'],
 };
@@ -818,12 +1206,15 @@ async function renderRoute() {
   $('#page-title').textContent = meta[1];
   setActiveNav(route);
 
+  if (route !== 'call-station') stopCallStationPolling();
+
   try {
     state.loading = true;
     if (route === 'dashboard') await renderDashboard();
     else if (route === 'leads') await renderLeads();
     else if (route === 'campaigns') await renderCampaigns();
     else if (route === 'calls') await renderCalls();
+    else if (route === 'call-station') await renderCallStation();
     else if (route === 'follow-ups') await renderFollowUps();
     else if (route === 'settings') await renderSettings();
     else await renderDashboard();
@@ -836,9 +1227,13 @@ async function renderRoute() {
 }
 
 document.addEventListener('click', async (event) => {
-  const target = event.target.closest('button, a');
+  const target = event.target.closest('button, a, tr.station-row');
   if (!target) return;
   try {
+    if (target.dataset.stationId) {
+      await showStationCallDetails(target.dataset.stationId);
+      return;
+    }
     if (target.dataset.viewCall) await showCallDetails(target.dataset.viewCall);
     if (target.dataset.viewLead) await showLeadDetails(target.dataset.viewLead, false);
     if (target.dataset.editLead) await showLeadDetails(target.dataset.editLead, true);
@@ -871,6 +1266,13 @@ $('#refresh-btn').addEventListener('click', () => {
 
 window.addEventListener('hashchange', () => {
   renderRoute().catch((error) => showNotice(error.message, 'error'));
+});
+
+document.addEventListener('visibilitychange', () => {
+  const route = (window.location.hash || '').replace(/^#\//, '').split('?')[0];
+  if (route !== 'call-station') return;
+  if (document.hidden) return;
+  refreshCallStationData({ quiet: true }).catch(() => {});
 });
 
 async function boot() {

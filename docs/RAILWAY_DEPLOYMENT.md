@@ -55,7 +55,9 @@ DATABASE_PATH=/data/ai-call-center.sqlite
 CALL_PROVIDER=mock
 SMARTPING_DRY_RUN=true
 SMARTPING_LIVE_CALLS_ENABLED=false
+SMARTPING_SINGLE_CALL_ENABLED=false
 SMARTPING_STORE_AUDIO=false
+SMARTPING_PLAYBACK_MODE=fixed-welcome
 SMARTPING_STREAM_AUTH_MODE=provider-compatible
 SMARTPING_STREAM_SHARED_SECRET=<railway-only secret for /api/streams commands>
 SMARTPING_WEBHOOK_PATH=/webhooks/smartping/call-status
@@ -65,6 +67,16 @@ WEBHOOK_SECRET=<new random secret>
 
 `provider-compatible` allows SmartPing to upgrade `wss://…/ws/voice/smartping` **without** `Authorization: Bearer`. Keep `required` only for internal Bearer simulator tests.
 
+`SMARTPING_PLAYBACK_MODE=fixed-welcome` plays `assets/audio/welcome.ulaw` (raw G.711 μ-law 8 kHz) on WebSocket `start` and bypasses mock STT/TTS.
+
+Stage 1 single-call gates (leave false until explicitly approved):
+
+```text
+SMARTPING_LIVE_CALLS_ENABLED=false
+SMARTPING_SINGLE_CALL_ENABLED=false
+SMARTPING_TEST_PHONE_NUMBER=
+```
+
 Keep unset initially:
 
 ```text
@@ -73,6 +85,7 @@ SMARTPING_DID_NUMBER
 SMARTPING_BASE_URL
 SMARTPING_STREAM_URL
 SMARTPING_WEBHOOK_SHARED_SECRET
+SMARTPING_WELCOME_AUDIO_PATH
 ```
 
 Do **not** manually set `PORT`. Railway injects it.
@@ -82,6 +95,22 @@ After the public WSS simulator passes, you may set:
 ```text
 SMARTPING_STREAM_URL=wss://<generated-domain>/ws/voice/smartping
 ```
+
+### Stage 1 single-call CLI (do not run until approved)
+
+Preview only (no network):
+
+```bash
+npm run call:smartping-single -- --dry-run-preview
+```
+
+Live single call (requires both live flags, env credentials, destination env, and `--confirm`):
+
+```bash
+npm run call:smartping-single -- --confirm
+```
+
+Campaign/bulk SmartPing dialing remains blocked regardless of these flags.
 
 ## 6. HTTP health check
 

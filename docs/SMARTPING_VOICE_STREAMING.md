@@ -99,7 +99,9 @@ It never calls SmartPing and never places a phone call.
 | Variable | Phase 3A default | Purpose |
 |---|---|---|
 | `SMARTPING_DRY_RUN` | `true` | Preview only, no network call |
-| `SMARTPING_LIVE_CALLS_ENABLED` | `false` | Blocks live outbound calling |
+| `SMARTPING_LIVE_CALLS_ENABLED` | `false` | Required (with single-call) for one controlled CLI call |
+| `SMARTPING_SINGLE_CALL_ENABLED` | `false` | Required with live flag for Stage 1 CLI only |
+| `SMARTPING_PLAYBACK_MODE` | `pipeline` | Use `fixed-welcome` for prerecorded μ-law on `start` |
 | `SMARTPING_STORE_AUDIO` | `false` | Do not persist raw audio payloads |
 | `CALL_PROVIDER` | `mock` | Keep Phase 2 mock call-control active |
 

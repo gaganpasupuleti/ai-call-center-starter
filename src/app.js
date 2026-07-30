@@ -26,6 +26,7 @@ import {
   clientIpFromRequest,
   sanitizeIp,
 } from './streaming/stream-logger.js';
+import { CallStationTracker } from './streaming/call-station-tracker.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const publicDirectory = path.resolve(__dirname, '..', 'public');
@@ -46,10 +47,27 @@ function requiredString(value, name) {
   return value.trim();
 }
 
-export function createApp({ repository, provider, config, sessionManager = null }) {
+export function createApp({
+  repository,
+  provider,
+  config,
+  sessionManager = null,
+  callStation = null,
+}) {
   const callService = new CallService({ repository, provider, config });
   const leadService = new LeadService({ repository });
   const campaignService = new CampaignService({ repository, callService });
+  const station =
+    callStation ||
+    new CallStationTracker({
+      repository,
+      config: config.smartPing ?? {},
+      sessionManager,
+    });
+  if (sessionManager && !sessionManager.callStation) {
+    sessionManager.callStation = station;
+  }
+  station.setSessionManager?.(sessionManager);
   const secrets = [
     config.smartPing?.apiToken,
     config.smartPing?.streamSharedSecret,
@@ -96,6 +114,7 @@ export function createApp({ repository, provider, config, sessionManager = null 
           repository,
           webhookRateLimiter,
           secrets,
+          callStation: station,
         });
       }
 
@@ -144,6 +163,38 @@ export function createApp({ repository, provider, config, sessionManager = null 
 
       if (request.method === 'GET' && pathname === '/api/settings') {
         return sendJson(response, 200, getPublicSettings(config, provider.name));
+      }
+
+      if (request.method === 'GET' && pathname === '/api/call-station/summary') {
+        return sendJson(response, 200, station.getSummary());
+      }
+
+      if (request.method === 'GET' && pathname === '/api/call-station/health') {
+        return sendJson(response, 200, station.getHealth(config.smartPing ?? {}));
+      }
+
+      if (request.method === 'GET' && pathname === '/api/call-station/calls') {
+        const filters = {
+          status: url.searchParams.get('status') || undefined,
+          outcome: url.searchParams.get('outcome') || undefined,
+          websocket: url.searchParams.get('websocket') || undefined,
+          webhook: url.searchParams.get('webhook') || undefined,
+          q: url.searchParams.get('q') || undefined,
+          from: url.searchParams.get('from') || undefined,
+          to: url.searchParams.get('to') || undefined,
+        };
+        return sendJson(response, 200, {
+          items: station.listCalls(filters),
+        });
+      }
+
+      const callStationDetailMatch = pathname.match(
+        /^\/api\/call-station\/calls\/([^/]+)$/,
+      );
+      if (request.method === 'GET' && callStationDetailMatch) {
+        const call = station.getCall(decodeURIComponent(callStationDetailMatch[1]));
+        if (!call) return sendJson(response, 404, { error: 'Call not found' });
+        return sendJson(response, 200, call);
       }
 
       if (request.method === 'GET' && pathname === '/api/streams') {
@@ -468,6 +519,7 @@ async function handleSmartPingCallStatusWebhook({
   repository,
   webhookRateLimiter,
   secrets,
+  callStation = null,
 }) {
   const route = config.smartPing?.webhookPath ?? '/webhooks/smartping/call-status';
   const { ipPartial, ipHash } = sanitizeIp(clientIpFromRequest(request));
@@ -554,6 +606,17 @@ async function handleSmartPingCallStatusWebhook({
       ua,
     },
   });
+
+  try {
+    callStation?.onWebhook?.({
+      callRef: normalized.callRef,
+      status: normalized.status,
+      duplicate: stored.duplicate === true,
+      eventKey: normalized.eventKey,
+    });
+  } catch {
+    // Monitoring must not fail webhook acceptance.
+  }
 
   logWebhookEvent({
     event: stored.duplicate ? 'webhook_duplicate' : 'webhook_accepted',

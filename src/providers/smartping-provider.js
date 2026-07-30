@@ -1,7 +1,9 @@
 import {
   buildVoicebotCallRequest,
   executeVoicebotCall,
+  executeSingleVoicebotCall,
   toRedactedRequestPreview,
+  SmartPingLiveCallsDisabledError,
 } from '../streaming/smartping/request-builder.js';
 
 export class IntegrationPendingError extends Error {
@@ -19,8 +21,8 @@ export class SmartPingProvider {
   }
 
   /**
-   * Live outbound calling remains disabled in Phase 3A.
-   * Use buildOutboundPreview() / dry-run execution instead.
+   * Campaign / bulk outbound remains blocked.
+   * Controlled single-call tests use scripts/place-test-call.mjs only.
    */
   async startOutboundCall({ call, lead, campaign, webhookUrl }) {
     const preview = this.buildOutboundPreview({
@@ -41,14 +43,14 @@ export class SmartPingProvider {
     if (result.dryRun) {
       throw Object.assign(
         new IntegrationPendingError(
-          'SmartPing live calls are disabled. Dry-run preview available via /api/smartping/outbound/preview.',
+          'SmartPing campaign/bulk live calls are disabled. Use dry-run preview or the single-call CLI after explicit approval.',
         ),
         { statusCode: 403, preview: result.preview },
       );
     }
 
     throw new IntegrationPendingError(
-      'SmartPing live voicebot calling is not enabled in Phase 3A.',
+      'SmartPing campaign/bulk live voicebot calling remains blocked.',
     );
   }
 
@@ -74,3 +76,5 @@ export class SmartPingProvider {
     );
   }
 }
+
+export { SmartPingLiveCallsDisabledError, executeSingleVoicebotCall };

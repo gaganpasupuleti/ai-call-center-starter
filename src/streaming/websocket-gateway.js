@@ -172,6 +172,7 @@ export function attachVoiceStreaming({
 
     const session = sessionManager.attachSocket(ws);
     session.connectionId = connectionId;
+    sessionManager.callStation?.onSessionOpened?.(session);
 
     const onIdle = () => {
       logStreamEvent(
@@ -270,12 +271,15 @@ export function attachVoiceStreaming({
     ws.on('close', (closeCode) => {
       clearIdleTimer(ws);
       activeConnections = Math.max(0, activeConnections - 1);
+      const code = Number(closeCode) || 0;
+      session.wsCloseCode = code;
+      if (session.ws) session.ws.closeCode = code;
       logStreamEvent(
         {
           event: 'ws_close',
           route: pathname,
           connectionId,
-          closeCode: Number(closeCode) || 0,
+          closeCode: code,
           activeConnections,
         },
         logSink,

@@ -9,16 +9,27 @@ import {
   buildOutboundTransfer,
 } from './protocol.js';
 import { VoicePipeline } from './ai/pipeline.js';
+import {
+  FixedAudioError,
+  getWelcomeMulaw,
+  isFixedWelcomeMode,
+} from './fixed-audio.js';
 
 function nowIso() {
   return new Date().toISOString();
 }
 
 export class StreamSessionManager {
-  constructor({ repository, config, pipeline = new VoicePipeline() }) {
+  constructor({
+    repository,
+    config,
+    pipeline = new VoicePipeline(),
+    callStation = null,
+  }) {
     this.repository = repository;
     this.config = config;
     this.pipeline = pipeline;
+    this.callStation = callStation;
     this.sessions = new Map();
     this.allSessions = new Set();
   }
@@ -79,6 +90,7 @@ export class StreamSessionManager {
         session.metadata.protocol = event.protocol;
         session.metadata.version = event.version;
         this.#persistEvent(session, event);
+        this.callStation?.onProtocolEvent?.(session, 'connected');
         return { ok: true };
       case 'start':
         return this.#onStart(session, event);
@@ -158,6 +170,7 @@ export class StreamSessionManager {
         metadata: session.metadata,
       });
     }
+    this.callStation?.onSessionClosed?.(session, reason);
     this.allSessions.delete(session);
     if (session.ws && session.ws.readyState === 1) {
       try {
@@ -175,6 +188,7 @@ export class StreamSessionManager {
   }
 
   #onStart(session, event) {
+    const alreadyStarted = Boolean(session.streamSid);
     session.streamSid = event.streamSid;
     session.callSid = event.callSid;
     session.audioFormat = event.mediaFormat;
@@ -183,27 +197,97 @@ export class StreamSessionManager {
     session.state = STREAM_STATES.active;
     this.sessions.set(session.streamSid, session);
 
-    session.queue = new PacedAudioQueue({
-      sendChunk: (chunk) => {
-        if (session.state === STREAM_STATES.closed) return;
-        this.#send(session, buildOutboundMedia(session.streamSid, chunk));
-        session.stats.mediaOut += 1;
-      },
-    });
+    if (!session.queue) {
+      session.queue = new PacedAudioQueue({
+        sendChunk: (chunk) => {
+          if (session.state === STREAM_STATES.closed) return;
+          this.#send(session, buildOutboundMedia(session.streamSid, chunk));
+          session.stats.mediaOut += 1;
+          if (
+            session.metadata.welcomePlayed &&
+            !session.metadata.welcomeCompleted &&
+            (session.queue?.pendingChunks ?? 0) === 0
+          ) {
+            session.metadata.welcomeCompleted = true;
+            session.metadata.audioCompletedAt = nowIso();
+            this.callStation?.markAudioCompleted?.(session);
+          }
+        },
+      });
+    }
 
-    const record = this.repository.createVoiceStream({
-      id: session.id,
-      streamSid: session.streamSid,
-      callSid: session.callSid,
-      appCallId: session.appCallId,
-      state: session.state,
-      audioFormat: session.audioFormat,
-      customParameters: session.customParameters,
-      openedAt: session.openedAt,
-      metadata: session.metadata,
-    });
+    let record = this.repository.getVoiceStream(session.streamSid);
+    if (!record) {
+      record = this.repository.createVoiceStream({
+        id: session.id,
+        streamSid: session.streamSid,
+        callSid: session.callSid,
+        appCallId: session.appCallId,
+        state: session.state,
+        audioFormat: session.audioFormat,
+        customParameters: session.customParameters,
+        openedAt: session.openedAt,
+        metadata: session.metadata,
+      });
+    }
     this.#persistEvent(session, event);
-    return { ok: true, stream: record };
+    this.callStation?.onProtocolEvent?.(session, 'start');
+
+    const playback = this.#maybeEnqueueFixedWelcome(session);
+    if (!alreadyStarted) {
+      this.callStation?.onStreamStarted?.(session, playback);
+    }
+    return { ok: true, stream: record, playback, duplicateStart: alreadyStarted };
+  }
+
+  #maybeEnqueueFixedWelcome(session) {
+    if (!isFixedWelcomeMode(this.config)) {
+      return { mode: 'pipeline', enqueuedChunks: 0 };
+    }
+
+    if (session.metadata.welcomePlayed === true) {
+      return {
+        mode: 'fixed-welcome',
+        enqueuedChunks: 0,
+        skippedDuplicate: true,
+        byteLength: session.metadata.welcomeBytes ?? 0,
+      };
+    }
+
+    try {
+      const audioPath = this.config.welcomeAudioPath || undefined;
+      const welcome = getWelcomeMulaw(audioPath);
+      const enqueuedChunks = this.sendMedia(session, welcome.bytes);
+      this.sendMark(session, 'welcome-complete');
+      session.metadata.playbackMode = 'fixed-welcome';
+      session.metadata.welcomePlayed = true;
+      session.metadata.welcomeChunks = enqueuedChunks;
+      session.metadata.welcomeBytes = welcome.byteLength;
+      session.metadata.welcomeDurationSeconds = welcome.durationSeconds;
+      session.metadata.audioQueuedAt = nowIso();
+      this.callStation?.markAudioQueued?.(session, {
+        chunks: enqueuedChunks,
+        durationSeconds: welcome.durationSeconds,
+      });
+      return {
+        mode: 'fixed-welcome',
+        enqueuedChunks,
+        byteLength: welcome.byteLength,
+        durationSeconds: welcome.durationSeconds,
+      };
+    } catch (error) {
+      const code =
+        error instanceof FixedAudioError ? error.code : 'welcome_audio_error';
+      session.metadata.playbackMode = 'fixed-welcome';
+      session.metadata.welcomeError = code;
+      session.metadata.welcomePlayed = true;
+      this.callStation?.markAudioFailed?.(session, code);
+      return {
+        mode: 'fixed-welcome',
+        enqueuedChunks: 0,
+        error: code,
+      };
+    }
   }
 
   async #onMedia(session, event) {
@@ -218,6 +302,12 @@ export class StreamSessionManager {
 
     session.stats.mediaIn += 1;
     this.#persistEvent(session, event, { validationResult: 'ok' });
+    this.callStation?.onProtocolEvent?.(session, 'media');
+
+    // Stage 1 fixed playback: do not run mock STT/TTS.
+    if (isFixedWelcomeMode(this.config)) {
+      return { ok: true, playbackMode: 'fixed-welcome', pipelineSkipped: true };
+    }
 
     const result = await this.pipeline.handleInboundAudio(event.payload, {
       streamSid: session.streamSid,
@@ -252,6 +342,7 @@ export class StreamSessionManager {
   #onStop(session, event) {
     session.state = STREAM_STATES.stopping;
     this.#persistEvent(session, event);
+    this.callStation?.onProtocolEvent?.(session, 'stop');
     this.closeSession(session, 'provider_stop');
     return { ok: true };
   }

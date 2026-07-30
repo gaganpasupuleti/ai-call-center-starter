@@ -37,6 +37,12 @@ function normalizeWebhookPath(value) {
   return raw.replace(/\/+$/, '') || '/webhooks/smartping/call-status';
 }
 
+function normalizePlaybackMode(value) {
+  const mode = String(value ?? 'pipeline').trim().toLowerCase();
+  if (mode === 'fixed-welcome' || mode === 'fixed_welcome') return 'fixed-welcome';
+  return 'pipeline';
+}
+
 export function getConfig(overrides = {}) {
   const cwd = process.cwd();
   const host = overrides.host ?? process.env.HOST ?? '127.0.0.1';
@@ -91,6 +97,18 @@ export function getConfig(overrides = {}) {
       liveCallsEnabled:
         smartPingOverrides.liveCallsEnabled ??
         envFlag('SMARTPING_LIVE_CALLS_ENABLED', false),
+      singleCallEnabled:
+        smartPingOverrides.singleCallEnabled ??
+        envFlag('SMARTPING_SINGLE_CALL_ENABLED', false),
+      playbackMode: normalizePlaybackMode(
+        smartPingOverrides.playbackMode ??
+          process.env.SMARTPING_PLAYBACK_MODE ??
+          'pipeline',
+      ),
+      welcomeAudioPath:
+        smartPingOverrides.welcomeAudioPath ??
+        process.env.SMARTPING_WELCOME_AUDIO_PATH ??
+        '',
       storeAudio:
         smartPingOverrides.storeAudio ?? envFlag('SMARTPING_STORE_AUDIO', false),
       streamAuthMode: normalizeStreamAuthMode(
@@ -166,6 +184,8 @@ export function getPublicSettings(config, providerName) {
     dryRunEnabled: config.smartPing.dryRun !== false,
     liveCallsEnabled: config.smartPing.liveCallsEnabled === true,
     liveCallsDisabled: config.smartPing.liveCallsEnabled !== true,
+    singleCallEnabled: config.smartPing.singleCallEnabled === true,
+    playbackMode: config.smartPing.playbackMode,
     storeAudioEnabled: config.smartPing.storeAudio === true,
     streamAuthMode: config.smartPing.streamAuthMode,
     streamAuthRequired: config.smartPing.streamAuthMode === 'required',
@@ -183,6 +203,6 @@ export function getPublicSettings(config, providerName) {
     followUpLinkPlaceholder: config.followUpLinkPlaceholder,
     streamPathHint: STREAM_PATH,
     smartPingActivationMessage:
-      'Public stream-only mode can use SMARTPING_STREAM_AUTH_MODE=provider-compatible so SmartPing can upgrade /ws/voice/smartping without a Bearer token. Live CALL_PROVIDER=smartping calls remain disabled. required mode is retained for internal simulator Bearer tests only.',
+      'Public stream-only mode can use SMARTPING_STREAM_AUTH_MODE=provider-compatible. Stage 1 fixed-welcome playback uses SMARTPING_PLAYBACK_MODE=fixed-welcome. Campaign/bulk live calls stay blocked; a single controlled call requires LIVE + SINGLE_CALL flags, env credentials, and CLI --confirm.',
   };
 }

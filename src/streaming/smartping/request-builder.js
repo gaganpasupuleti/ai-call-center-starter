@@ -65,15 +65,24 @@ export function toRedactedRequestPreview(request) {
     method: request.method,
     url: request.url,
     headers: redactHeaders(request.headers),
-    body: request.body,
+    body: {
+      phone_number: '[REDACTED]',
+      did_number: request.body?.did_number ? '[REDACTED]' : '',
+      url: request.body?.url ?? null,
+      channel_vars: {
+        custom_parameters: request.body?.channel_vars?.custom_parameters ?? {},
+      },
+    },
     tokenConfigured: Boolean(request.headers['x-api-token']),
     redactedToken: redactSecret(request.headers['x-api-token']),
+    destinationConfigured: Boolean(request.body?.phone_number),
+    didConfigured: Boolean(request.body?.did_number),
   };
 }
 
 /**
- * Fail-closed outbound executor.
- * Dry-run never touches the network. Live calls require explicit enablement.
+ * Campaign/bulk fail-closed outbound executor.
+ * Dry-run never touches the network. Live campaign/bulk calls stay blocked.
  */
 export async function executeVoicebotCall(
   config,
@@ -95,7 +104,6 @@ export async function executeVoicebotCall(
     customParameters,
   });
 
-  // Phase 3A is fail-closed: never place a live SmartPing call.
   if (config.dryRun !== false) {
     return {
       dryRun: true,
@@ -104,20 +112,90 @@ export async function executeVoicebotCall(
     };
   }
 
+  // Intentionally unused: campaign path must never call the network.
+  void fetchImpl;
+
   throw new SmartPingLiveCallsDisabledError(
-    'Live SmartPing voicebot calls are disabled (Phase 3A fail-closed). Use dry-run previews only.',
+    'SmartPing campaign/bulk live voicebot calls remain disabled. Use the single-call CLI after explicit approval.',
   );
 }
 
-// Keep an unreachable live path isolated for future Phase work.
-export async function __dangerousLiveVoicebotCall(request, fetchImpl = globalThis.fetch) {
+/**
+ * Fail-closed single-call executor for one approved Stage 1 test.
+ * Requires liveCallsEnabled + singleCallEnabled + confirm === true and dryRun off.
+ * Does not parse undocumented SmartPing response fields.
+ */
+export async function executeSingleVoicebotCall(
+  config,
+  {
+    phoneNumber,
+    didNumber,
+    streamUrl,
+    customParameters = { app_call_id: 'stage1-single-call' },
+    confirm = false,
+    fetchImpl = globalThis.fetch,
+  },
+) {
+  if (!phoneNumber) {
+    throw Object.assign(new Error('Destination number env is required'), {
+      statusCode: 400,
+      code: 'destination_missing',
+    });
+  }
+
+  const request = buildVoicebotCallRequest({
+    baseUrl: config.baseUrl,
+    outboundPath: config.outboundPath,
+    apiToken: config.apiToken,
+    phoneNumber,
+    didNumber: didNumber ?? config.didNumber,
+    streamUrl: streamUrl ?? config.streamUrl,
+    customParameters,
+  });
+
+  if (config.dryRun !== false) {
+    return {
+      dryRun: true,
+      networkRequestMade: false,
+      singleCall: true,
+      preview: toRedactedRequestPreview(request),
+    };
+  }
+
+  if (config.liveCallsEnabled !== true || config.singleCallEnabled !== true) {
+    throw new SmartPingLiveCallsDisabledError(
+      'Single-call live mode requires SMARTPING_LIVE_CALLS_ENABLED=true and SMARTPING_SINGLE_CALL_ENABLED=true',
+    );
+  }
+
+  if (confirm !== true) {
+    throw new SmartPingLiveCallsDisabledError(
+      'Explicit --confirm is required before placing a single SmartPing test call',
+    );
+  }
+
+  if (!config.apiToken) {
+    throw Object.assign(new Error('SMARTPING_API_TOKEN is required for live single-call'), {
+      statusCode: 400,
+      code: 'api_token_missing',
+    });
+  }
+
   const response = await fetchImpl(request.url, {
     method: request.method,
     headers: request.headers,
     body: JSON.stringify(request.body),
   });
+  const bodyText = await response.text();
+
   return {
-    status: response.status,
-    bodyText: await response.text(),
+    dryRun: false,
+    networkRequestMade: true,
+    singleCall: true,
+    httpStatus: response.status,
+    responseBodyBytes: Buffer.byteLength(bodyText),
+    // Response field schema remains undocumented — do not parse call IDs.
+    responseParsePending: true,
+    preview: toRedactedRequestPreview(request),
   };
 }

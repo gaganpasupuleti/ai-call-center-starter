@@ -4,19 +4,26 @@ import { Repository } from './database.js';
 import { createProvider } from './providers/index.js';
 import { createApp } from './app.js';
 import { StreamSessionManager } from './streaming/session-manager.js';
+import { CallStationTracker } from './streaming/call-station-tracker.js';
 import { attachVoiceStreaming } from './streaming/websocket-gateway.js';
 import { STREAM_PATH } from './streaming/constants.js';
 
 const config = getConfig();
 const repository = new Repository(config.databasePath);
 const provider = createProvider(config);
-const sessionManager = new StreamSessionManager({
+const callStation = new CallStationTracker({
   repository,
   config: config.smartPing,
 });
+const sessionManager = new StreamSessionManager({
+  repository,
+  config: config.smartPing,
+  callStation,
+});
+callStation.setSessionManager(sessionManager);
 const acceptingConnections = { current: true };
 const server = http.createServer(
-  createApp({ repository, provider, config, sessionManager }),
+  createApp({ repository, provider, config, sessionManager, callStation }),
 );
 
 const { pathname } = attachVoiceStreaming({
