@@ -84,7 +84,7 @@ View them at `#/call-station` on the same service.
 ```text
 OUTBOUND_DIALER_LIVE=true
 OUTBOUND_TTS_PROVIDER=edge
-OUTBOUND_TTS_VOICE=en-US-JennyNeural
+OUTBOUND_TTS_VOICE=en-IN-NeerjaNeural
 ```
 
 Stage 1 single-call gates (leave false unless you intentionally open classic CLI gates):

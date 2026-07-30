@@ -168,7 +168,7 @@ export function getConfig(overrides = {}) {
       ttsVoice:
         overrides.outbound?.ttsVoice ??
         process.env.OUTBOUND_TTS_VOICE ??
-        'en-US-JennyNeural',
+        'en-IN-NeerjaNeural',
       dialerLive:
         overrides.outbound?.dialerLive ??
         envFlag('OUTBOUND_DIALER_LIVE', false),

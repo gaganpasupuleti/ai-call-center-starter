@@ -98,7 +98,7 @@ function cacheKey(text, voice) {
 }
 
 export function getTtsHealth({
-  voice = process.env.OUTBOUND_TTS_VOICE || 'en-US-JennyNeural',
+  voice = process.env.OUTBOUND_TTS_VOICE || 'en-IN-NeerjaNeural',
   cacheDir = DEFAULT_CACHE_DIR,
 } = {}) {
   return {
@@ -116,7 +116,7 @@ export function getTtsHealth({
 export async function synthesizeToMulaw(
   text,
   {
-    voice = process.env.OUTBOUND_TTS_VOICE || 'en-US-JennyNeural',
+    voice = process.env.OUTBOUND_TTS_VOICE || 'en-IN-NeerjaNeural',
     cacheDir = DEFAULT_CACHE_DIR,
   } = {},
 ) {
