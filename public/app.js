@@ -1331,6 +1331,31 @@ async function renderOutbound() {
               ></textarea>
               <p class="admin-hint"><span id="outbound-count">0</span> / 500</p>
             </div>
+            <div class="admin-field">
+              <label>Voice</label>
+              <div class="voice-toggle" role="radiogroup" aria-label="Indian English voice">
+                ${(health.voiceOptions || [
+                  { id: 'en-IN-NeerjaNeural', label: 'Neerja', description: 'Female · Indian English' },
+                  { id: 'en-IN-PrabhatNeural', label: 'Prabhat', description: 'Male · Indian English' },
+                ])
+                  .map((option) => {
+                    const selected =
+                      option.id === (health.defaultVoice || 'en-IN-NeerjaNeural');
+                    return `<button
+                      type="button"
+                      class="voice-option ${selected ? 'active' : ''}"
+                      role="radio"
+                      aria-checked="${selected ? 'true' : 'false'}"
+                      data-voice="${escapeHtml(option.id)}"
+                    >
+                      <strong>${escapeHtml(option.label)}</strong>
+                      <span>${escapeHtml(option.description || '')}</span>
+                    </button>`;
+                  })
+                  .join('')}
+              </div>
+              <input type="hidden" id="outbound-voice" value="${escapeHtml(health.defaultVoice || 'en-IN-NeerjaNeural')}" />
+            </div>
             <div class="admin-field admin-field-inline">
               <label for="outbound-repeat">Repeat message</label>
               <select id="outbound-repeat" name="repeat">
@@ -1360,10 +1385,26 @@ async function renderOutbound() {
   const phoneInput = $('#outbound-phone');
   const messageInput = $('#outbound-message');
   const repeatInput = $('#outbound-repeat');
+  const voiceInput = $('#outbound-voice');
   const confirmInput = $('#outbound-confirm');
   const callBtn = $('#outbound-call');
   const resultHost = $('#outbound-result');
   const countEl = $('#outbound-count');
+
+  function selectedVoice() {
+    return voiceInput.value || health.defaultVoice || 'en-IN-NeerjaNeural';
+  }
+
+  $$('.voice-option').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      voiceInput.value = btn.dataset.voice;
+      $$('.voice-option').forEach((other) => {
+        const active = other === btn;
+        other.classList.toggle('active', active);
+        other.setAttribute('aria-checked', active ? 'true' : 'false');
+      });
+    });
+  });
 
   function syncCallButton() {
     const ready =
@@ -1409,11 +1450,13 @@ async function renderOutbound() {
           phoneNumber: phoneInput.value.trim(),
           message: messageInput.value,
           repeatCount: Number(repeatInput.value || 1),
+          voice: selectedVoice(),
         }),
       });
       showNotice('Preview ready — no network call was made.');
       showResult('Preview', [
         `Destination ${result.phoneMasked || '—'}`,
+        `Voice ${result.voice || result.audio?.voice || '—'}`,
         `Message length ${result.messageLength}`,
         `Repeat ${result.repeatCount}`,
         result.audio?.durationSeconds != null
@@ -1441,6 +1484,7 @@ async function renderOutbound() {
           phoneNumber: phoneInput.value.trim(),
           message: messageInput.value,
           repeatCount: Number(repeatInput.value || 1),
+          voice: selectedVoice(),
           confirm: true,
         }),
       });
@@ -1452,6 +1496,7 @@ async function renderOutbound() {
       );
       showResult('Call result', [
         `Destination ${result.phoneMasked || '—'}`,
+        `Voice ${result.audio?.voice || selectedVoice()}`,
         `App call id ${result.appCallId || '—'}`,
         `Call Station ref ${result.stationRef || '—'}`,
         `Network request: ${result.networkRequestMade ? 'yes' : 'no'}`,

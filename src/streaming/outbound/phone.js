@@ -1,5 +1,20 @@
 import { maskPhone } from '../call-station.js';
 
+export const OUTBOUND_VOICE_OPTIONS = [
+  {
+    id: 'en-IN-NeerjaNeural',
+    label: 'Neerja',
+    description: 'Female · Indian English',
+  },
+  {
+    id: 'en-IN-PrabhatNeural',
+    label: 'Prabhat',
+    description: 'Male · Indian English',
+  },
+];
+
+const ALLOWED_VOICES = new Set(OUTBOUND_VOICE_OPTIONS.map((v) => v.id));
+
 /**
  * SmartPing email cURL uses 10-digit Indian mobiles (no + / no 91 prefix).
  */
@@ -34,6 +49,25 @@ export function normalizeRepeatCount(value, fallback = 1) {
   const n = Number(value);
   if (!Number.isFinite(n)) return fallback;
   return Math.max(1, Math.min(5, Math.round(n)));
+}
+
+export function normalizeOutboundVoice(raw, fallback = 'en-IN-NeerjaNeural') {
+  const voice = String(raw ?? '').trim();
+  if (ALLOWED_VOICES.has(voice)) {
+    return { ok: true, voice };
+  }
+  if (!voice && ALLOWED_VOICES.has(fallback)) {
+    return { ok: true, voice: fallback };
+  }
+  if (!voice) {
+    return { ok: true, voice: 'en-IN-NeerjaNeural' };
+  }
+  return {
+    ok: false,
+    voice: null,
+    error: 'Choose Neerja (female) or Prabhat (male) Indian English voice',
+    code: 'invalid_voice',
+  };
 }
 
 export function normalizeOutboundMessage(raw) {

@@ -10,6 +10,7 @@ import { OutboundPromptStore } from '../src/streaming/outbound/prompt-store.js';
 import {
   normalizeOutboundPhone,
   normalizeOutboundMessage,
+  normalizeOutboundVoice,
   normalizeRepeatCount,
 } from '../src/streaming/outbound/phone.js';
 import { concatMulawWithRepeats, pcm16leMonoToMulaw } from '../src/streaming/tts/mulaw-encode.js';
@@ -102,6 +103,9 @@ test('phone normalization accepts 10 digits and strips 91 prefix', () => {
   assert.equal(normalizeOutboundMessage('Hello').ok, true);
   assert.equal(normalizeRepeatCount(9), 5);
   assert.equal(normalizeRepeatCount(0), 1);
+  assert.equal(normalizeOutboundVoice('en-IN-PrabhatNeural').voice, 'en-IN-PrabhatNeural');
+  assert.equal(normalizeOutboundVoice('en-US-JennyNeural').ok, false);
+  assert.equal(normalizeOutboundVoice('').voice, 'en-IN-NeerjaNeural');
 });
 
 test('mulaw encode rejects silence and concat respects repeat', () => {

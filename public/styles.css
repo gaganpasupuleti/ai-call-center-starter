@@ -596,6 +596,42 @@ tbody tr:hover { background: #f8fafc; }
 .admin-field-inline {
   max-width: 220px;
 }
+.voice-toggle {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+.voice-option {
+  display: grid;
+  gap: 2px;
+  text-align: left;
+  border: 1px solid #cbd5e1;
+  border-radius: 10px;
+  background: #fff;
+  color: #334155;
+  padding: 10px 12px;
+  cursor: pointer;
+  box-shadow: none;
+  font-weight: 600;
+}
+.voice-option strong {
+  font-size: 13px;
+  color: #0f172a;
+}
+.voice-option span {
+  font-size: 11px;
+  font-weight: 500;
+  color: #64748b;
+}
+.voice-option:hover {
+  background: #f8fafc;
+  filter: none;
+}
+.voice-option.active {
+  border-color: #818cf8;
+  background: #eef2ff;
+  box-shadow: 0 0 0 2px rgba(79, 70, 229, 0.18);
+}
 .admin-hint {
   margin: 0;
   font-size: 11px;

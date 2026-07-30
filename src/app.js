@@ -31,7 +31,9 @@ import { CallStationTracker } from './streaming/call-station-tracker.js';
 import {
   normalizeOutboundMessage,
   normalizeOutboundPhone,
+  normalizeOutboundVoice,
   normalizeRepeatCount,
+  OUTBOUND_VOICE_OPTIONS,
 } from './streaming/outbound/phone.js';
 import { getOutboundPromptStore } from './streaming/outbound/prompt-store.js';
 import {
@@ -331,6 +333,8 @@ export function createApp({
           streamUrlConfigured: Boolean(config.smartPing?.streamUrlConfigured),
           playbackMode: config.smartPing?.playbackMode || 'pipeline',
           tts,
+          voiceOptions: OUTBOUND_VOICE_OPTIONS,
+          defaultVoice: config.outbound?.ttsVoice || 'en-IN-NeerjaNeural',
           messageMaxLength: 500,
           repeatMin: 1,
           repeatMax: 5,
@@ -344,11 +348,21 @@ export function createApp({
         );
         const message = normalizeOutboundMessage(body.message ?? body.text);
         const repeatCount = normalizeRepeatCount(body.repeatCount ?? body.repeat);
+        const voicePick = normalizeOutboundVoice(
+          body.voice,
+          config.outbound?.ttsVoice || 'en-IN-NeerjaNeural',
+        );
         if (!phone.ok) {
           return sendJson(response, 400, { error: phone.error, code: phone.code });
         }
         if (!message.ok) {
           return sendJson(response, 400, { error: message.error, code: message.code });
+        }
+        if (!voicePick.ok) {
+          return sendJson(response, 400, {
+            error: voicePick.error,
+            code: voicePick.code,
+          });
         }
         if (!config.smartPing?.baseUrl || !config.smartPing?.didNumber) {
           return sendJson(response, 400, {
@@ -375,7 +389,7 @@ export function createApp({
         };
         try {
           const synthesized = await synthesizeToMulaw(message.text, {
-            voice: config.outbound?.ttsVoice,
+            voice: voicePick.voice,
           });
           audioMeta = {
             estimated: false,
@@ -406,6 +420,7 @@ export function createApp({
           phoneMasked: phone.masked,
           messageLength: message.length,
           repeatCount,
+          voice: voicePick.voice,
           preview: toRedactedRequestPreview(built),
           audio: audioMeta,
         });
@@ -418,12 +433,22 @@ export function createApp({
         );
         const message = normalizeOutboundMessage(body.message ?? body.text);
         const repeatCount = normalizeRepeatCount(body.repeatCount ?? body.repeat);
+        const voicePick = normalizeOutboundVoice(
+          body.voice,
+          config.outbound?.ttsVoice || 'en-IN-NeerjaNeural',
+        );
         const confirm = body.confirm === true;
         if (!phone.ok) {
           return sendJson(response, 400, { error: phone.error, code: phone.code });
         }
         if (!message.ok) {
           return sendJson(response, 400, { error: message.error, code: message.code });
+        }
+        if (!voicePick.ok) {
+          return sendJson(response, 400, {
+            error: voicePick.error,
+            code: voicePick.code,
+          });
         }
         if (!confirm) {
           return sendJson(response, 403, {
@@ -445,7 +470,7 @@ export function createApp({
         let synthesized;
         try {
           synthesized = await synthesizeToMulaw(message.text, {
-            voice: config.outbound?.ttsVoice,
+            voice: voicePick.voice,
           });
         } catch (error) {
           const status = error?.statusCode || 500;
