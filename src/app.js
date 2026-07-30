@@ -129,7 +129,11 @@ export function createApp({
       pathname === '/api/dashboard' ||
       pathname === '/api/summary' ||
       pathname.startsWith('/api/outbound/') ||
-      pathname.startsWith('/api/call-station/')
+      pathname.startsWith('/api/call-station/') ||
+      pathname.startsWith('/api/leads') ||
+      pathname.startsWith('/api/campaigns') ||
+      pathname.startsWith('/api/calls') ||
+      pathname.startsWith('/api/follow-ups')
     );
   }
   const secrets = [

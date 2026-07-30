@@ -592,11 +592,40 @@ async function renderCalls() {
   const query = new URLSearchParams();
   if (search) query.set('search', search);
   if (status) query.set('status', status);
-  const calls = await api(`/api/calls?${query}`);
+  const [calls, live] = await Promise.all([
+    api(`/api/calls?${query}`),
+    api('/api/call-station/calls').catch(() => ({ items: [] })),
+  ]);
+  const liveMapped = (live.items || []).slice(0, 50).map((item) => ({
+    id: item.id,
+    lead_name: item.destinationMasked || 'Live stream',
+    phone: item.destinationMasked || '—',
+    campaign_name: String(item.id || '').startsWith('OB-')
+      ? 'Outbound dialer'
+      : 'Voice stream',
+    status: String(item.status || 'unknown').toLowerCase(),
+    selected_digit: null,
+    interpreted_response:
+      item.durationSeconds != null
+        ? `${item.durationSeconds}s audio`
+        : item.timeline?.[item.timeline.length - 1]?.event || '—',
+    duration_seconds: item.durationSeconds,
+    started_at: item.requestedAt || item.initiatedAt || item.answeredAt || null,
+    created_at: item.requestedAt || item.initiatedAt || item.answeredAt || null,
+    stationRef: item.id,
+    source: 'call-station',
+  }));
   root.innerHTML = `
     <article class="card">
       <div class="card-header">
-        <div><h3>Call history</h3><p>Searchable outcomes and mock simulation controls</p></div>
+        <div><h3>Live dial & stream log</h3><p>Real SmartPing activity from SQLite</p></div>
+        <a class="admin-btn ghost" href="#/call-station">Call Station</a>
+      </div>
+      ${renderRecentLiveCallsTable(liveMapped)}
+    </article>
+    <article class="card">
+      <div class="card-header">
+        <div><h3>Campaign call history</h3><p>Mock / campaign outcomes</p></div>
       </div>
       <form id="call-filters" class="toolbar">
         <label>Search<input name="search" value="${escapeHtml(search)}" placeholder="Lead, phone, campaign" /></label>
