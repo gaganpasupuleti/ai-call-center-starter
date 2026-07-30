@@ -4,7 +4,7 @@ export const OUTBOUND_VOICE_OPTIONS = [
   {
     id: 'en-IN-NeerjaNeural',
     label: 'Neerja',
-    description: 'Female · English',
+    description: 'Female',
     language: 'en',
     languageLabel: 'English',
     gender: 'female',
@@ -12,7 +12,7 @@ export const OUTBOUND_VOICE_OPTIONS = [
   {
     id: 'en-IN-PrabhatNeural',
     label: 'Prabhat',
-    description: 'Male · English',
+    description: 'Male',
     language: 'en',
     languageLabel: 'English',
     gender: 'male',
@@ -20,7 +20,7 @@ export const OUTBOUND_VOICE_OPTIONS = [
   {
     id: 'te-IN-ShrutiNeural',
     label: 'Shruti',
-    description: 'Female · Telugu',
+    description: 'Female',
     language: 'te',
     languageLabel: 'Telugu',
     gender: 'female',
@@ -28,7 +28,7 @@ export const OUTBOUND_VOICE_OPTIONS = [
   {
     id: 'te-IN-MohanNeural',
     label: 'Mohan',
-    description: 'Male · Telugu',
+    description: 'Male',
     language: 'te',
     languageLabel: 'Telugu',
     gender: 'male',
@@ -38,8 +38,8 @@ export const OUTBOUND_VOICE_OPTIONS = [
 const ALLOWED_VOICES = new Set(OUTBOUND_VOICE_OPTIONS.map((v) => v.id));
 
 export const OUTBOUND_LANGUAGE_OPTIONS = [
-  { id: 'en', label: 'English', hint: 'Indian English speech' },
-  { id: 'te', label: 'Telugu', hint: 'తెలుగు speech — use Telugu script for best results' },
+  { id: 'en', label: 'English', hint: 'Indian English' },
+  { id: 'te', label: 'Telugu', hint: 'తెలుగు — use Telugu script' },
 ];
 
 /**

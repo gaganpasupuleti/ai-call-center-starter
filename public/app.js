@@ -1283,21 +1283,25 @@ async function renderOutbound() {
     <section class="admin-section outbound-admin">
       <div class="admin-toolbar">
         <div class="admin-toolbar-copy">
-          <h3>Outbound Dialer</h3>
-          <p>Compose a spoken message and dial one number. Preview is safe; Place call requires confirmation.</p>
+          <h3>New call</h3>
+          <p>Write a message, pick a voice, preview safely — then confirm to dial.</p>
         </div>
-        <button type="button" class="admin-btn ghost" id="outbound-refresh">Refresh status</button>
+        <button type="button" class="admin-btn ghost" id="outbound-refresh">Refresh</button>
       </div>
 
       <div class="admin-pane">
-        <div class="admin-pane-header">Compose call</div>
+        <div class="admin-pane-header">Dialer</div>
         <div class="admin-pane-body">
-          <div class="admin-status-row">
-            <span class="admin-chip ${gatesOpen ? 'ok' : 'warn'}">${gatesOpen ? 'Dialer ready' : 'Dialer locked'}</span>
-            <span class="admin-chip ${ttsReady ? 'ok' : 'danger'}">TTS ${ttsReady ? 'ready' : 'not ready'}</span>
-            <span class="admin-chip">DID ${escapeHtml(health.didMasked || '—')}</span>
-            <span class="admin-chip muted">${escapeHtml(health.liveCallMessage || '')}</span>
+          <div class="admin-status-row" aria-label="Dialer status">
+            <span class="admin-chip ${gatesOpen ? 'ok' : 'warn'}">${gatesOpen ? 'Ready' : 'Locked'}</span>
+            <span class="admin-chip ${ttsReady ? 'ok' : 'danger'}">${ttsReady ? 'Speech ready' : 'Speech offline'}</span>
+            <span class="admin-chip">Line ${escapeHtml(health.didMasked || '—')}</span>
           </div>
+          <p class="admin-status-note">${escapeHtml(
+            gatesOpen
+              ? 'Preview never dials. Place call places one live call after you confirm.'
+              : health.liveCallMessage || 'Live dialing is locked until dialer mode is enabled.',
+          )}</p>
 
           ${
             gatesOpen
@@ -1308,19 +1312,29 @@ async function renderOutbound() {
           }
 
           <form class="admin-compose" id="outbound-form">
-            <div class="admin-field">
-              <label for="outbound-phone">Phone number</label>
-              <input
-                id="outbound-phone"
-                name="phone"
-                inputmode="numeric"
-                autocomplete="tel"
-                placeholder="10-digit mobile (e.g. 98XXXXXXXX)"
-                required
-              />
+            <div class="admin-field-row">
+              <div class="admin-field">
+                <label for="outbound-phone">Mobile</label>
+                <input
+                  id="outbound-phone"
+                  name="phone"
+                  inputmode="numeric"
+                  autocomplete="tel"
+                  placeholder="10-digit number"
+                  required
+                />
+              </div>
+              <div class="admin-field admin-field-repeat">
+                <label for="outbound-repeat">Repeats</label>
+                <select id="outbound-repeat" name="repeat">
+                  ${[1, 2, 3, 4, 5]
+                    .map((n) => `<option value="${n}" ${n === 1 ? 'selected' : ''}>${n}×</option>`)
+                    .join('')}
+                </select>
+              </div>
             </div>
             <div class="admin-field">
-              <label for="outbound-message">Message to speak</label>
+              <label for="outbound-message">Spoken message</label>
               <textarea
                 id="outbound-message"
                 name="message"
@@ -1333,24 +1347,21 @@ async function renderOutbound() {
             </div>
             <div class="admin-field">
               <label>Language</label>
-              <div class="lang-toggle" role="radiogroup" aria-label="Speech language" id="outbound-lang-toggle">
+              <div class="seg-toggle" role="radiogroup" aria-label="Speech language" id="outbound-lang-toggle">
                 ${(health.languageOptions || [
-                  { id: 'en', label: 'English', hint: 'Indian English speech' },
-                  { id: 'te', label: 'Telugu', hint: 'తెలుగు speech — use Telugu script for best results' },
+                  { id: 'en', label: 'English', hint: 'Indian English' },
+                  { id: 'te', label: 'Telugu', hint: 'తెలుగు — use Telugu script' },
                 ])
                   .map((option) => {
                     const selected = option.id === 'en';
                     return `<button
                       type="button"
-                      class="lang-option ${selected ? 'active' : ''}"
+                      class="seg-option ${selected ? 'active' : ''}"
                       role="radio"
                       aria-checked="${selected ? 'true' : 'false'}"
                       data-lang="${escapeHtml(option.id)}"
                       data-hint="${escapeHtml(option.hint || '')}"
-                    >
-                      <strong>${escapeHtml(option.label)}</strong>
-                      <span>${escapeHtml(option.hint || '')}</span>
-                    </button>`;
+                    >${escapeHtml(option.label)}</button>`;
                   })
                   .join('')}
               </div>
@@ -1361,20 +1372,12 @@ async function renderOutbound() {
               <input type="hidden" id="outbound-voice" value="${escapeHtml(health.defaultVoice || 'en-IN-NeerjaNeural')}" />
               <input type="hidden" id="outbound-lang" value="en" />
             </div>
-            <div class="admin-field admin-field-inline">
-              <label for="outbound-repeat">Repeat message</label>
-              <select id="outbound-repeat" name="repeat">
-                ${[1, 2, 3, 4, 5]
-                  .map((n) => `<option value="${n}" ${n === 1 ? 'selected' : ''}>${n} time${n > 1 ? 's' : ''}</option>`)
-                  .join('')}
-              </select>
-            </div>
             <label class="admin-confirm">
               <input type="checkbox" id="outbound-confirm" ${gatesOpen ? '' : 'disabled'} />
-              <span>I confirm placing one live call to this number with this message.</span>
+              <span>Confirm one live call to this number</span>
             </label>
             <div class="admin-actions">
-              <button type="button" class="admin-btn ghost" id="outbound-preview">Preview</button>
+              <button type="button" class="admin-btn ghost" id="outbound-preview">Preview speech</button>
               <button type="button" class="admin-btn primary" id="outbound-call" disabled>
                 Place call
               </button>
@@ -1384,7 +1387,7 @@ async function renderOutbound() {
           <div id="outbound-result" class="admin-result" hidden></div>
           <div id="outbound-preview-player" class="outbound-preview-player" hidden>
             <div class="outbound-preview-head">
-              <strong>Speak preview</strong>
+              <strong>Preview</strong>
               <span class="muted" id="outbound-preview-meta"></span>
             </div>
             <audio id="outbound-preview-audio" controls preload="none"></audio>
@@ -1413,14 +1416,14 @@ async function renderOutbound() {
   const previewMeta = $('#outbound-preview-meta');
 
   const allVoices = health.voiceOptions || [
-    { id: 'en-IN-NeerjaNeural', label: 'Neerja', description: 'Female · English', language: 'en', gender: 'female' },
-    { id: 'en-IN-PrabhatNeural', label: 'Prabhat', description: 'Male · English', language: 'en', gender: 'male' },
-    { id: 'te-IN-ShrutiNeural', label: 'Shruti', description: 'Female · Telugu', language: 'te', gender: 'female' },
-    { id: 'te-IN-MohanNeural', label: 'Mohan', description: 'Male · Telugu', language: 'te', gender: 'male' },
+    { id: 'en-IN-NeerjaNeural', label: 'Neerja', description: 'Female', language: 'en', gender: 'female' },
+    { id: 'en-IN-PrabhatNeural', label: 'Prabhat', description: 'Male', language: 'en', gender: 'male' },
+    { id: 'te-IN-ShrutiNeural', label: 'Shruti', description: 'Female', language: 'te', gender: 'female' },
+    { id: 'te-IN-MohanNeural', label: 'Mohan', description: 'Male', language: 'te', gender: 'male' },
   ];
   const langOptions = health.languageOptions || [
-    { id: 'en', label: 'English', hint: 'Indian English speech' },
-    { id: 'te', label: 'Telugu', hint: 'తెలుగు speech — use Telugu script for best results' },
+    { id: 'en', label: 'English', hint: 'Indian English' },
+    { id: 'te', label: 'Telugu', hint: 'తెలుగు — use Telugu script' },
   ];
 
   function selectedVoice() {
@@ -1470,6 +1473,12 @@ async function renderOutbound() {
     voiceToggle.innerHTML = options
       .map((option) => {
         const selected = option.id === preferred;
+        const gender =
+          option.gender === 'male'
+            ? 'Male'
+            : option.gender === 'female'
+              ? 'Female'
+              : option.description || '';
         return `<button
           type="button"
           class="voice-option ${selected ? 'active' : ''}"
@@ -1478,7 +1487,7 @@ async function renderOutbound() {
           data-voice="${escapeHtml(option.id)}"
         >
           <strong>${escapeHtml(option.label)}</strong>
-          <span>${escapeHtml(option.description || '')}</span>
+          <span>${escapeHtml(gender)}</span>
         </button>`;
       })
       .join('');
@@ -1501,13 +1510,13 @@ async function renderOutbound() {
     allVoices.find((v) => v.id === (health.defaultVoice || 'en-IN-NeerjaNeural')) ||
     allVoices[0];
   langInput.value = defaultVoiceMeta?.language || 'en';
-  $$('.lang-option').forEach((btn) => {
+  $$('.seg-option').forEach((btn) => {
     const active = btn.dataset.lang === langInput.value;
     btn.classList.toggle('active', active);
     btn.setAttribute('aria-checked', active ? 'true' : 'false');
     btn.addEventListener('click', () => {
       langInput.value = btn.dataset.lang;
-      $$('.lang-option').forEach((other) => {
+      $$('.seg-option').forEach((other) => {
         const on = other === btn;
         other.classList.toggle('active', on);
         other.setAttribute('aria-checked', on ? 'true' : 'false');
@@ -1618,7 +1627,7 @@ async function renderOutbound() {
     } finally {
       const previewBtn = $('#outbound-preview');
       previewBtn.disabled = false;
-      previewBtn.textContent = 'Preview';
+      previewBtn.textContent = 'Preview speech';
     }
   });
 
@@ -1671,7 +1680,7 @@ const titles = {
   leads: ['Contacts', 'Leads'],
   campaigns: ['Outbound', 'Campaigns'],
   calls: ['Activity', 'Calls'],
-  outbound: ['Compose', 'Outbound'],
+  outbound: ['New call', 'Outbound'],
   'call-station': ['Monitoring', 'Call Station'],
   'follow-ups': ['Outbox', 'Follow-ups'],
   settings: ['Configuration', 'Settings'],
