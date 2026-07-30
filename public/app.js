@@ -1377,6 +1377,17 @@ async function renderOutbound() {
           </form>
 
           <div id="outbound-result" class="admin-result" hidden></div>
+          <div id="outbound-preview-player" class="outbound-preview-player" hidden>
+            <div class="outbound-preview-head">
+              <strong>Speak preview</strong>
+              <span class="muted" id="outbound-preview-meta"></span>
+            </div>
+            <audio id="outbound-preview-audio" controls preload="none"></audio>
+            <div class="admin-actions">
+              <button type="button" class="admin-btn primary" id="outbound-play">Play</button>
+              <button type="button" class="admin-btn ghost" id="outbound-stop">Stop</button>
+            </div>
+          </div>
         </div>
       </div>
     </section>
@@ -1390,9 +1401,29 @@ async function renderOutbound() {
   const callBtn = $('#outbound-call');
   const resultHost = $('#outbound-result');
   const countEl = $('#outbound-count');
+  const previewPlayer = $('#outbound-preview-player');
+  const previewAudio = $('#outbound-preview-audio');
+  const previewMeta = $('#outbound-preview-meta');
 
   function selectedVoice() {
     return voiceInput.value || health.defaultVoice || 'en-IN-NeerjaNeural';
+  }
+
+  function stopPreviewAudio() {
+    previewAudio.pause();
+    previewAudio.currentTime = 0;
+  }
+
+  function loadPreviewAudio(preview, metaLabel = '') {
+    if (!preview?.base64 || !preview?.mimeType) {
+      previewPlayer.hidden = true;
+      previewAudio.removeAttribute('src');
+      return;
+    }
+    stopPreviewAudio();
+    previewAudio.src = `data:${preview.mimeType};base64,${preview.base64}`;
+    previewMeta.textContent = metaLabel;
+    previewPlayer.hidden = false;
   }
 
   $$('.voice-option').forEach((btn) => {
@@ -1430,8 +1461,18 @@ async function renderOutbound() {
   syncCallButton();
 
   $('#outbound-refresh').addEventListener('click', () => {
+    stopPreviewAudio();
     renderOutbound().catch((error) => showNotice(error.message, 'error'));
   });
+
+  $('#outbound-play')?.addEventListener('click', async () => {
+    try {
+      await previewAudio.play();
+    } catch (error) {
+      showNotice(error.message || 'Unable to play preview audio', 'error');
+    }
+  });
+  $('#outbound-stop')?.addEventListener('click', () => stopPreviewAudio());
 
   function showResult(title, rows) {
     resultHost.hidden = false;
@@ -1444,6 +1485,10 @@ async function renderOutbound() {
   $('#outbound-preview').addEventListener('click', async () => {
     try {
       clearNotice();
+      stopPreviewAudio();
+      const previewBtn = $('#outbound-preview');
+      previewBtn.disabled = true;
+      previewBtn.textContent = 'Synthesizing…';
       const result = await api('/api/outbound/preview', {
         method: 'POST',
         body: JSON.stringify({
@@ -1453,7 +1498,7 @@ async function renderOutbound() {
           voice: selectedVoice(),
         }),
       });
-      showNotice('Preview ready — no network call was made.');
+      showNotice('Preview ready — listen below. No network call was made.');
       showResult('Preview', [
         `Destination ${result.phoneMasked || '—'}`,
         `Voice ${result.voice || result.audio?.voice || '—'}`,
@@ -1464,8 +1509,20 @@ async function renderOutbound() {
           : `Audio unavailable (${result.audio?.error || 'tts not ready'})`,
         `Token configured: ${result.preview?.tokenConfigured ? 'yes' : 'no'}`,
       ]);
+      loadPreviewAudio(
+        result.audio?.preview,
+        `${result.voice || result.audio?.voice || 'voice'} · ~${result.audio?.durationSeconds ?? '—'}s`,
+      );
+      if (result.audio?.preview?.base64) {
+        await previewAudio.play().catch(() => {});
+      }
     } catch (error) {
       showNotice(error.message, 'error');
+      previewPlayer.hidden = true;
+    } finally {
+      const previewBtn = $('#outbound-preview');
+      previewBtn.disabled = false;
+      previewBtn.textContent = 'Preview';
     }
   });
 
@@ -1476,6 +1533,7 @@ async function renderOutbound() {
         showNotice('Confirm the call and ensure the dialer is unlocked.', 'error');
         return;
       }
+      stopPreviewAudio();
       callBtn.disabled = true;
       callBtn.textContent = 'Placing…';
       const result = await api('/api/outbound/call', {

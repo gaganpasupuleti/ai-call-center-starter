@@ -67,3 +67,56 @@ export function concatMulawWithRepeats(mulawBytes, repeatCount, gapMs = 350) {
   }
   return Buffer.concat(parts);
 }
+
+function mulawByteToLinear16(muLawByte) {
+  const MULAW_BIAS = 0x84;
+  let mu = ~muLawByte & 0xff;
+  const sign = mu & 0x80;
+  const exponent = (mu >> 4) & 0x07;
+  const mantissa = mu & 0x0f;
+  let sample = (((mantissa << 3) + MULAW_BIAS) << exponent) - MULAW_BIAS;
+  return sign ? -sample : sample;
+}
+
+export function mulawToPcm16le(mulawBytes) {
+  const source = Buffer.isBuffer(mulawBytes)
+    ? mulawBytes
+    : Buffer.from(mulawBytes ?? []);
+  const pcm = Buffer.alloc(source.length * 2);
+  for (let i = 0; i < source.length; i += 1) {
+    pcm.writeInt16LE(mulawByteToLinear16(source[i]), i * 2);
+  }
+  return pcm;
+}
+
+/** Browser-playable WAV (PCM 16-bit LE mono). */
+export function pcm16leToWav(pcm, sampleRate = AUDIO.sampleRate, channels = 1) {
+  const dataSize = pcm.length;
+  const header = Buffer.alloc(44);
+  header.write('RIFF', 0);
+  header.writeUInt32LE(36 + dataSize, 4);
+  header.write('WAVE', 8);
+  header.write('fmt ', 12);
+  header.writeUInt32LE(16, 16);
+  header.writeUInt16LE(1, 20);
+  header.writeUInt16LE(channels, 22);
+  header.writeUInt32LE(sampleRate, 24);
+  header.writeUInt32LE(sampleRate * channels * 2, 28);
+  header.writeUInt16LE(channels * 2, 32);
+  header.writeUInt16LE(16, 34);
+  header.write('data', 36);
+  header.writeUInt32LE(dataSize, 40);
+  return Buffer.concat([header, pcm]);
+}
+
+export function mulawToWavBase64(mulawBytes, sampleRate = AUDIO.sampleRate) {
+  const pcm = mulawToPcm16le(mulawBytes);
+  const wav = pcm16leToWav(pcm, sampleRate, 1);
+  return {
+    mimeType: 'audio/wav',
+    base64: wav.toString('base64'),
+    byteLength: wav.length,
+    sampleRate,
+    channels: 1,
+  };
+}

@@ -13,7 +13,7 @@ import {
   normalizeOutboundVoice,
   normalizeRepeatCount,
 } from '../src/streaming/outbound/phone.js';
-import { concatMulawWithRepeats, pcm16leMonoToMulaw } from '../src/streaming/tts/mulaw-encode.js';
+import { concatMulawWithRepeats, pcm16leMonoToMulaw, mulawToWavBase64 } from '../src/streaming/tts/mulaw-encode.js';
 import { AUDIO } from '../src/streaming/constants.js';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -117,6 +117,10 @@ test('mulaw encode rejects silence and concat respects repeat', () => {
   const once = concatMulawWithRepeats(encoded.bytes, 1);
   const twice = concatMulawWithRepeats(encoded.bytes, 2);
   assert.ok(twice.length > once.length);
+  const wav = mulawToWavBase64(once);
+  assert.equal(wav.mimeType, 'audio/wav');
+  assert.ok(wav.base64.length > 100);
+  assert.equal(Buffer.from(wav.base64, 'base64').subarray(0, 4).toString('ascii'), 'RIFF');
 });
 
 test('outbound health and preview never leak secrets or dial', async () => {

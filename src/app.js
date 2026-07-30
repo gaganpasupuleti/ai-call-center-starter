@@ -41,6 +41,10 @@ import {
   synthesizeToMulaw,
   TtsError,
 } from './streaming/tts/synthesize.js';
+import {
+  concatMulawWithRepeats,
+  mulawToWavBase64,
+} from './streaming/tts/mulaw-encode.js';
 import { maskPhone } from './streaming/call-station.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -391,6 +395,11 @@ export function createApp({
           const synthesized = await synthesizeToMulaw(message.text, {
             voice: voicePick.voice,
           });
+          const playbackBytes = concatMulawWithRepeats(
+            synthesized.bytes,
+            repeatCount,
+          );
+          const previewAudio = mulawToWavBase64(playbackBytes);
           audioMeta = {
             estimated: false,
             durationSeconds: Number(
@@ -404,6 +413,7 @@ export function createApp({
             cached: synthesized.cached === true,
             ttsReady: true,
             repeatCount,
+            preview: previewAudio,
           };
         } catch (error) {
           audioMeta = {
