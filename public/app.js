@@ -1418,8 +1418,8 @@ async function renderOutbound() {
   const allVoices = health.voiceOptions || [
     { id: 'en-IN-NeerjaNeural', label: 'Neerja', description: 'Female', language: 'en', gender: 'female' },
     { id: 'en-IN-PrabhatNeural', label: 'Prabhat', description: 'Male', language: 'en', gender: 'male' },
-    { id: 'te-IN-ShrutiNeural', label: 'Shruti', description: 'Female', language: 'te', gender: 'female' },
-    { id: 'te-IN-MohanNeural', label: 'Mohan', description: 'Male', language: 'te', gender: 'male' },
+    { id: 'te-IN-ShrutiNeural', label: 'కావ్య', description: 'Female', language: 'te', gender: 'female' },
+    { id: 'te-IN-MohanNeural', label: 'రవి', description: 'Male', language: 'te', gender: 'male' },
   ];
   const langOptions = health.languageOptions || [
     { id: 'en', label: 'English', hint: 'Indian English' },

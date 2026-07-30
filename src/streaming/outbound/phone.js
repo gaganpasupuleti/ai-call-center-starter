@@ -19,7 +19,7 @@ export const OUTBOUND_VOICE_OPTIONS = [
   },
   {
     id: 'te-IN-ShrutiNeural',
-    label: 'Shruti',
+    label: 'కావ్య',
     description: 'Female',
     language: 'te',
     languageLabel: 'Telugu',
@@ -27,7 +27,7 @@ export const OUTBOUND_VOICE_OPTIONS = [
   },
   {
     id: 'te-IN-MohanNeural',
-    label: 'Mohan',
+    label: 'రవి',
     description: 'Male',
     language: 'te',
     languageLabel: 'Telugu',
