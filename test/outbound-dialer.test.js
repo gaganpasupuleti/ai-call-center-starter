@@ -104,6 +104,8 @@ test('phone normalization accepts 10 digits and strips 91 prefix', () => {
   assert.equal(normalizeRepeatCount(9), 5);
   assert.equal(normalizeRepeatCount(0), 1);
   assert.equal(normalizeOutboundVoice('en-IN-PrabhatNeural').voice, 'en-IN-PrabhatNeural');
+  assert.equal(normalizeOutboundVoice('te-IN-ShrutiNeural').voice, 'te-IN-ShrutiNeural');
+  assert.equal(normalizeOutboundVoice('te-IN-MohanNeural').voice, 'te-IN-MohanNeural');
   assert.equal(normalizeOutboundVoice('en-US-JennyNeural').ok, false);
   assert.equal(normalizeOutboundVoice('').voice, 'en-IN-NeerjaNeural');
 });
@@ -132,6 +134,10 @@ test('outbound health and preview never leak secrets or dial', async () => {
     assert.equal(health.response.status, 200);
     assert.equal(health.body.liveGatesOpen, false);
     assert.equal(health.body.liveCallActionAvailable, false);
+    assert.equal(health.body.voiceOptions?.length, 4);
+    assert.equal(health.body.languageOptions?.length, 2);
+    assert.ok(health.body.voiceOptions.some((v) => v.id === 'te-IN-ShrutiNeural'));
+    assert.ok(health.body.voiceOptions.some((v) => v.id === 'te-IN-MohanNeural'));
     const serializedHealth = JSON.stringify(health.body);
     assert.equal(serializedHealth.includes(SECRET), false);
 
@@ -139,14 +145,28 @@ test('outbound health and preview never leak secrets or dial', async () => {
       phoneNumber: PHONE,
       message: 'Hello from outbound dialer preview.',
       repeatCount: 2,
+      voice: 'en-IN-NeerjaNeural',
     });
     assert.equal(preview.response.status, 200);
     assert.equal(preview.body.networkRequestMade, false);
     assert.equal(preview.body.phoneMasked, '••••4410');
     assert.equal(preview.body.repeatCount, 2);
+    assert.equal(preview.body.voice, 'en-IN-NeerjaNeural');
+    if (preview.body.audio?.estimated === false) {
+      assert.equal(preview.body.audio.voice, 'en-IN-NeerjaNeural');
+      assert.ok(preview.body.audio.preview?.base64);
+    }
     const serialized = JSON.stringify(preview.body);
     assert.equal(serialized.includes(SECRET), false);
     assert.equal(serialized.includes(PHONE), false);
+
+    const badVoice = await postJson(base, '/api/outbound/preview', {
+      phoneNumber: PHONE,
+      message: 'Hello',
+      voice: 'en-US-JennyNeural',
+    });
+    assert.equal(badVoice.response.status, 400);
+    assert.equal(badVoice.body.code, 'invalid_voice');
   });
 });
 

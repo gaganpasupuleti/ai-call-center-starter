@@ -4,16 +4,43 @@ export const OUTBOUND_VOICE_OPTIONS = [
   {
     id: 'en-IN-NeerjaNeural',
     label: 'Neerja',
-    description: 'Female · Indian English',
+    description: 'Female · English',
+    language: 'en',
+    languageLabel: 'English',
+    gender: 'female',
   },
   {
     id: 'en-IN-PrabhatNeural',
     label: 'Prabhat',
-    description: 'Male · Indian English',
+    description: 'Male · English',
+    language: 'en',
+    languageLabel: 'English',
+    gender: 'male',
+  },
+  {
+    id: 'te-IN-ShrutiNeural',
+    label: 'Shruti',
+    description: 'Female · Telugu',
+    language: 'te',
+    languageLabel: 'Telugu',
+    gender: 'female',
+  },
+  {
+    id: 'te-IN-MohanNeural',
+    label: 'Mohan',
+    description: 'Male · Telugu',
+    language: 'te',
+    languageLabel: 'Telugu',
+    gender: 'male',
   },
 ];
 
 const ALLOWED_VOICES = new Set(OUTBOUND_VOICE_OPTIONS.map((v) => v.id));
+
+export const OUTBOUND_LANGUAGE_OPTIONS = [
+  { id: 'en', label: 'English', hint: 'Indian English speech' },
+  { id: 'te', label: 'Telugu', hint: 'తెలుగు speech — use Telugu script for best results' },
+];
 
 /**
  * SmartPing email cURL uses 10-digit Indian mobiles (no + / no 91 prefix).
@@ -65,9 +92,14 @@ export function normalizeOutboundVoice(raw, fallback = 'en-IN-NeerjaNeural') {
   return {
     ok: false,
     voice: null,
-    error: 'Choose Neerja (female) or Prabhat (male) Indian English voice',
+    error:
+      'Choose an English (Neerja/Prabhat) or Telugu (Shruti/Mohan) voice',
     code: 'invalid_voice',
   };
+}
+
+export function voiceMeta(voiceId) {
+  return OUTBOUND_VOICE_OPTIONS.find((v) => v.id === voiceId) || null;
 }
 
 export function normalizeOutboundMessage(raw) {

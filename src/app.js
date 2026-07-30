@@ -34,6 +34,7 @@ import {
   normalizeOutboundVoice,
   normalizeRepeatCount,
   OUTBOUND_VOICE_OPTIONS,
+  OUTBOUND_LANGUAGE_OPTIONS,
 } from './streaming/outbound/phone.js';
 import { getOutboundPromptStore } from './streaming/outbound/prompt-store.js';
 import {
@@ -338,6 +339,7 @@ export function createApp({
           playbackMode: config.smartPing?.playbackMode || 'pipeline',
           tts,
           voiceOptions: OUTBOUND_VOICE_OPTIONS,
+          languageOptions: OUTBOUND_LANGUAGE_OPTIONS,
           defaultVoice: config.outbound?.ttsVoice || 'en-IN-NeerjaNeural',
           messageMaxLength: 500,
           repeatMin: 1,
@@ -395,6 +397,14 @@ export function createApp({
           const synthesized = await synthesizeToMulaw(message.text, {
             voice: voicePick.voice,
           });
+          if (synthesized.voice !== voicePick.voice) {
+            return sendJson(response, 500, {
+              error: 'Synthesized voice did not match the selected voice',
+              code: 'tts_voice_mismatch',
+              requestedVoice: voicePick.voice,
+              voice: synthesized.voice,
+            });
+          }
           const playbackBytes = concatMulawWithRepeats(
             synthesized.bytes,
             repeatCount,
@@ -410,17 +420,30 @@ export function createApp({
             energyRatio: synthesized.energyRatio,
             provider: synthesized.provider,
             voice: synthesized.voice,
+            requestedVoice: voicePick.voice,
+            locale: synthesized.locale || null,
             cached: synthesized.cached === true,
             ttsReady: true,
             repeatCount,
             preview: previewAudio,
           };
         } catch (error) {
+          const code = error instanceof TtsError ? error.code : 'tts_error';
+          const status =
+            error instanceof TtsError ? error.statusCode || 500 : 500;
+          if (code === 'tts_invalid_voice' || code === 'tts_voice_mismatch') {
+            return sendJson(response, status, {
+              error: error.message,
+              code,
+              requestedVoice: voicePick.voice,
+            });
+          }
           audioMeta = {
             estimated: true,
             durationSeconds: null,
             ttsReady: false,
-            error: error instanceof TtsError ? error.code : 'tts_error',
+            error: code,
+            requestedVoice: voicePick.voice,
             repeatCount,
           };
         }
@@ -487,6 +510,14 @@ export function createApp({
           return sendJson(response, status, {
             error: error?.message || 'TTS failed',
             code: error?.code || 'tts_error',
+          });
+        }
+        if (synthesized.voice !== voicePick.voice) {
+          return sendJson(response, 500, {
+            error: 'Synthesized voice did not match the selected voice',
+            code: 'tts_voice_mismatch',
+            requestedVoice: voicePick.voice,
+            voice: synthesized.voice,
           });
         }
 

@@ -596,11 +596,13 @@ tbody tr:hover { background: #f8fafc; }
 .admin-field-inline {
   max-width: 220px;
 }
+.lang-toggle,
 .voice-toggle {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 8px;
 }
+.lang-option,
 .voice-option {
   display: grid;
   gap: 2px;
@@ -614,19 +616,23 @@ tbody tr:hover { background: #f8fafc; }
   box-shadow: none;
   font-weight: 600;
 }
+.lang-option strong,
 .voice-option strong {
   font-size: 13px;
   color: #0f172a;
 }
+.lang-option span,
 .voice-option span {
   font-size: 11px;
   font-weight: 500;
   color: #64748b;
 }
+.lang-option:hover,
 .voice-option:hover {
   background: #f8fafc;
   filter: none;
 }
+.lang-option.active,
 .voice-option.active {
   border-color: #818cf8;
   background: #eef2ff;

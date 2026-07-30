@@ -12,6 +12,7 @@ import { fileURLToPath } from 'node:url';
 import { MsEdgeTTS, OUTPUT_FORMAT } from 'msedge-tts';
 import ffmpegPath from 'ffmpeg-static';
 import { pcm16leMonoToMulaw } from './mulaw-encode.js';
+import { OUTBOUND_VOICE_OPTIONS } from '../outbound/phone.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DEFAULT_CACHE_DIR = path.resolve(
@@ -22,6 +23,9 @@ const DEFAULT_CACHE_DIR = path.resolve(
   'artifacts',
   'tts-cache',
 );
+
+const CACHE_VERSION = 'v2';
+const ALLOWED_VOICES = new Set(OUTBOUND_VOICE_OPTIONS.map((v) => v.id));
 
 export class TtsError extends Error {
   constructor(message, code = 'tts_error', statusCode = 500) {
@@ -39,6 +43,23 @@ function escapeXml(text) {
     .replaceAll('>', '&gt;')
     .replaceAll('"', '&quot;')
     .replaceAll("'", '&apos;');
+}
+
+function localeFromVoice(voice) {
+  const match = /\w{2}-\w{2}/.exec(String(voice || ''));
+  return match ? match[0] : null;
+}
+
+function assertAllowedVoice(voice) {
+  const id = String(voice ?? '').trim();
+  if (!ALLOWED_VOICES.has(id)) {
+    throw new TtsError(
+      'Unsupported TTS voice — choose Neerja, Prabhat, Shruti, or Mohan',
+      'tts_invalid_voice',
+      400,
+    );
+  }
+  return id;
 }
 
 function runFfmpegToPcm(inputPath) {
@@ -92,18 +113,55 @@ function runFfmpegToPcm(inputPath) {
 
 function cacheKey(text, voice) {
   return createHash('sha256')
-    .update(`${voice}\n${text}`)
+    .update(`${CACHE_VERSION}\n${voice}\n${text}`)
     .digest('hex')
     .slice(0, 32);
+}
+
+function readCacheMeta(metaPath, expectedVoice) {
+  if (!existsSync(metaPath)) return null;
+  try {
+    const meta = JSON.parse(readFileSync(metaPath, 'utf8'));
+    if (meta?.voice !== expectedVoice || meta?.version !== CACHE_VERSION) {
+      return null;
+    }
+    return meta;
+  } catch {
+    return null;
+  }
+}
+
+function writeCacheMeta(metaPath, voice, key) {
+  writeFileSync(
+    metaPath,
+    JSON.stringify({
+      version: CACHE_VERSION,
+      voice,
+      cacheKey: key,
+      createdAt: new Date().toISOString(),
+    }),
+  );
+}
+
+function mulawEnergyRatio(bytes) {
+  let energetic = 0;
+  for (const sample of bytes) {
+    if (sample !== 0xff && sample !== 0x7f) energetic += 1;
+  }
+  return energetic / bytes.length;
 }
 
 export function getTtsHealth({
   voice = process.env.OUTBOUND_TTS_VOICE || 'en-IN-NeerjaNeural',
   cacheDir = DEFAULT_CACHE_DIR,
 } = {}) {
+  const resolved = ALLOWED_VOICES.has(String(voice || '').trim())
+    ? String(voice).trim()
+    : 'en-IN-NeerjaNeural';
   return {
     provider: process.env.OUTBOUND_TTS_PROVIDER || 'edge',
-    voice,
+    voice: resolved,
+    allowedVoices: [...ALLOWED_VOICES],
     ffmpegAvailable: Boolean(ffmpegPath && existsSync(ffmpegPath)),
     cacheDirConfigured: Boolean(cacheDir),
     ready: Boolean(ffmpegPath && existsSync(ffmpegPath)),
@@ -112,6 +170,7 @@ export function getTtsHealth({
 
 /**
  * Synthesize text to raw G.711 μ-law 8 kHz mono via Edge TTS + ffmpeg-static.
+ * Enforces the outbound voice allowlist and binds cache entries to that voice.
  */
 export async function synthesizeToMulaw(
   text,
@@ -132,7 +191,17 @@ export async function synthesizeToMulaw(
     );
   }
 
-  const health = getTtsHealth({ voice, cacheDir });
+  const requestedVoice = assertAllowedVoice(voice);
+  const expectedLocale = localeFromVoice(requestedVoice);
+  if (!expectedLocale) {
+    throw new TtsError(
+      'Could not derive locale from voice id',
+      'tts_invalid_voice',
+      400,
+    );
+  }
+
+  const health = getTtsHealth({ voice: requestedVoice, cacheDir });
   if (!health.ready) {
     throw new TtsError(
       'TTS is not ready (ffmpeg-static missing)',
@@ -142,18 +211,15 @@ export async function synthesizeToMulaw(
   }
 
   mkdirSync(cacheDir, { recursive: true });
-  const key = cacheKey(trimmed, voice);
+  const key = cacheKey(trimmed, requestedVoice);
   const cachedPath = path.join(cacheDir, `${key}.ulaw`);
+  const metaPath = path.join(cacheDir, `${key}.json`);
 
-  // Cached mulaw: validate non-empty + energy without round-tripping PCM.
-  if (existsSync(cachedPath)) {
+  // Cached mulaw: require matching voice meta + energy floor.
+  if (existsSync(cachedPath) && readCacheMeta(metaPath, requestedVoice)) {
     const bytes = readFileSync(cachedPath);
     if (bytes.length > 0) {
-      let energetic = 0;
-      for (const sample of bytes) {
-        if (sample !== 0xff && sample !== 0x7f) energetic += 1;
-      }
-      const energyRatio = energetic / bytes.length;
+      const energyRatio = mulawEnergyRatio(bytes);
       if (energyRatio >= 0.02) {
         return {
           bytes: Buffer.from(bytes),
@@ -164,7 +230,9 @@ export async function synthesizeToMulaw(
           encoding: 'audio/x-mulaw',
           energyRatio: Number(energyRatio.toFixed(4)),
           provider: 'edge',
-          voice,
+          voice: requestedVoice,
+          requestedVoice,
+          locale: expectedLocale,
           cached: true,
           cacheKey: key,
         };
@@ -172,26 +240,45 @@ export async function synthesizeToMulaw(
     }
   }
 
-  const workDir = path.join(cacheDir, 'tmp');
+  const workDir = path.join(cacheDir, 'tmp', key);
   mkdirSync(workDir, { recursive: true });
-  const mp3Path = path.join(workDir, `${key}.mp3`);
 
   try {
     const tts = new MsEdgeTTS();
-    await tts.setMetadata(voice, OUTPUT_FORMAT.AUDIO_24KHZ_48KBITRATE_MONO_MP3);
+    await tts.setMetadata(
+      requestedVoice,
+      OUTPUT_FORMAT.AUDIO_24KHZ_48KBITRATE_MONO_MP3,
+      { voiceLocale: expectedLocale },
+    );
+
+    const boundVoice = tts._voice;
+    const boundLocale = tts._metadataOptions?.voiceLocale;
+    if (boundVoice !== requestedVoice || boundLocale !== expectedLocale) {
+      throw new TtsError(
+        `Edge TTS voice mismatch (got ${boundVoice}/${boundLocale})`,
+        'tts_voice_mismatch',
+        500,
+      );
+    }
+
     const { audioFilePath } = await tts.toFile(workDir, escapeXml(trimmed));
-    // msedge-tts names the file itself; prefer returned path.
-    const sourcePath = audioFilePath || mp3Path;
-    if (!existsSync(sourcePath)) {
+    try {
+      tts.close();
+    } catch {
+      // ignore
+    }
+
+    if (!audioFilePath || !existsSync(audioFilePath)) {
       throw new TtsError('Edge TTS did not produce an audio file', 'tts_edge_empty');
     }
 
-    const pcm = await runFfmpegToPcm(sourcePath);
+    const pcm = await runFfmpegToPcm(audioFilePath);
     const encoded = pcm16leMonoToMulaw(pcm);
     writeFileSync(cachedPath, encoded.bytes);
+    writeCacheMeta(metaPath, requestedVoice, key);
 
     try {
-      rmSync(sourcePath, { force: true });
+      rmSync(workDir, { recursive: true, force: true });
     } catch {
       // ignore cleanup
     }
@@ -200,11 +287,18 @@ export async function synthesizeToMulaw(
       ...encoded,
       bytes: Buffer.from(encoded.bytes),
       provider: 'edge',
-      voice,
+      voice: requestedVoice,
+      requestedVoice,
+      locale: expectedLocale,
       cached: false,
       cacheKey: key,
     };
   } catch (error) {
+    try {
+      rmSync(workDir, { recursive: true, force: true });
+    } catch {
+      // ignore
+    }
     if (error instanceof TtsError) throw error;
     throw new TtsError(
       error?.message || 'TTS synthesis failed',

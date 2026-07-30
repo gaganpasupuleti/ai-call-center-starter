@@ -1329,32 +1329,37 @@ async function renderOutbound() {
                 placeholder="Hi, hello! How are you doing today?"
                 required
               ></textarea>
-              <p class="admin-hint"><span id="outbound-count">0</span> / 500</p>
+              <p class="admin-hint" id="outbound-message-hint"><span id="outbound-count">0</span> / 500</p>
             </div>
             <div class="admin-field">
-              <label>Voice</label>
-              <div class="voice-toggle" role="radiogroup" aria-label="Indian English voice">
-                ${(health.voiceOptions || [
-                  { id: 'en-IN-NeerjaNeural', label: 'Neerja', description: 'Female · Indian English' },
-                  { id: 'en-IN-PrabhatNeural', label: 'Prabhat', description: 'Male · Indian English' },
+              <label>Language</label>
+              <div class="lang-toggle" role="radiogroup" aria-label="Speech language" id="outbound-lang-toggle">
+                ${(health.languageOptions || [
+                  { id: 'en', label: 'English', hint: 'Indian English speech' },
+                  { id: 'te', label: 'Telugu', hint: 'తెలుగు speech — use Telugu script for best results' },
                 ])
                   .map((option) => {
-                    const selected =
-                      option.id === (health.defaultVoice || 'en-IN-NeerjaNeural');
+                    const selected = option.id === 'en';
                     return `<button
                       type="button"
-                      class="voice-option ${selected ? 'active' : ''}"
+                      class="lang-option ${selected ? 'active' : ''}"
                       role="radio"
                       aria-checked="${selected ? 'true' : 'false'}"
-                      data-voice="${escapeHtml(option.id)}"
+                      data-lang="${escapeHtml(option.id)}"
+                      data-hint="${escapeHtml(option.hint || '')}"
                     >
                       <strong>${escapeHtml(option.label)}</strong>
-                      <span>${escapeHtml(option.description || '')}</span>
+                      <span>${escapeHtml(option.hint || '')}</span>
                     </button>`;
                   })
                   .join('')}
               </div>
+            </div>
+            <div class="admin-field">
+              <label>Voice</label>
+              <div class="voice-toggle" role="radiogroup" aria-label="Voice" id="outbound-voice-toggle"></div>
               <input type="hidden" id="outbound-voice" value="${escapeHtml(health.defaultVoice || 'en-IN-NeerjaNeural')}" />
+              <input type="hidden" id="outbound-lang" value="en" />
             </div>
             <div class="admin-field admin-field-inline">
               <label for="outbound-repeat">Repeat message</label>
@@ -1397,16 +1402,33 @@ async function renderOutbound() {
   const messageInput = $('#outbound-message');
   const repeatInput = $('#outbound-repeat');
   const voiceInput = $('#outbound-voice');
+  const langInput = $('#outbound-lang');
   const confirmInput = $('#outbound-confirm');
   const callBtn = $('#outbound-call');
   const resultHost = $('#outbound-result');
-  const countEl = $('#outbound-count');
+  const messageHint = $('#outbound-message-hint');
+  const voiceToggle = $('#outbound-voice-toggle');
   const previewPlayer = $('#outbound-preview-player');
   const previewAudio = $('#outbound-preview-audio');
   const previewMeta = $('#outbound-preview-meta');
 
+  const allVoices = health.voiceOptions || [
+    { id: 'en-IN-NeerjaNeural', label: 'Neerja', description: 'Female · English', language: 'en', gender: 'female' },
+    { id: 'en-IN-PrabhatNeural', label: 'Prabhat', description: 'Male · English', language: 'en', gender: 'male' },
+    { id: 'te-IN-ShrutiNeural', label: 'Shruti', description: 'Female · Telugu', language: 'te', gender: 'female' },
+    { id: 'te-IN-MohanNeural', label: 'Mohan', description: 'Male · Telugu', language: 'te', gender: 'male' },
+  ];
+  const langOptions = health.languageOptions || [
+    { id: 'en', label: 'English', hint: 'Indian English speech' },
+    { id: 'te', label: 'Telugu', hint: 'తెలుగు speech — use Telugu script for best results' },
+  ];
+
   function selectedVoice() {
     return voiceInput.value || health.defaultVoice || 'en-IN-NeerjaNeural';
+  }
+
+  function selectedLanguage() {
+    return langInput.value || 'en';
   }
 
   function stopPreviewAudio() {
@@ -1426,16 +1448,78 @@ async function renderOutbound() {
     previewPlayer.hidden = false;
   }
 
-  $$('.voice-option').forEach((btn) => {
-    btn.addEventListener('click', () => {
-      voiceInput.value = btn.dataset.voice;
-      $$('.voice-option').forEach((other) => {
-        const active = other === btn;
-        other.classList.toggle('active', active);
-        other.setAttribute('aria-checked', active ? 'true' : 'false');
+  function updateMessageChrome() {
+    const lang = selectedLanguage();
+    const meta = langOptions.find((o) => o.id === lang);
+    const count = String(messageInput.value.length);
+    messageHint.innerHTML = `<span id="outbound-count">${count}</span> / 500 · ${escapeHtml(meta?.hint || '')}`;
+    messageInput.placeholder =
+      lang === 'te'
+        ? 'నమస్కారం! మీరు ఎలా ఉన్నారు?'
+        : 'Hi, hello! How are you doing today?';
+  }
+
+  function renderVoiceOptions(preferredVoice = null) {
+    const lang = selectedLanguage();
+    const options = allVoices.filter((v) => v.language === lang);
+    const preferred =
+      preferredVoice && options.some((v) => v.id === preferredVoice)
+        ? preferredVoice
+        : options[0]?.id || health.defaultVoice || 'en-IN-NeerjaNeural';
+    voiceInput.value = preferred;
+    voiceToggle.innerHTML = options
+      .map((option) => {
+        const selected = option.id === preferred;
+        return `<button
+          type="button"
+          class="voice-option ${selected ? 'active' : ''}"
+          role="radio"
+          aria-checked="${selected ? 'true' : 'false'}"
+          data-voice="${escapeHtml(option.id)}"
+        >
+          <strong>${escapeHtml(option.label)}</strong>
+          <span>${escapeHtml(option.description || '')}</span>
+        </button>`;
+      })
+      .join('');
+
+    $$('.voice-option', voiceToggle).forEach((btn) => {
+      btn.addEventListener('click', () => {
+        voiceInput.value = btn.dataset.voice;
+        stopPreviewAudio();
+        previewPlayer.hidden = true;
+        $$('.voice-option', voiceToggle).forEach((other) => {
+          const active = other === btn;
+          other.classList.toggle('active', active);
+          other.setAttribute('aria-checked', active ? 'true' : 'false');
+        });
       });
     });
+  }
+
+  const defaultVoiceMeta =
+    allVoices.find((v) => v.id === (health.defaultVoice || 'en-IN-NeerjaNeural')) ||
+    allVoices[0];
+  langInput.value = defaultVoiceMeta?.language || 'en';
+  $$('.lang-option').forEach((btn) => {
+    const active = btn.dataset.lang === langInput.value;
+    btn.classList.toggle('active', active);
+    btn.setAttribute('aria-checked', active ? 'true' : 'false');
+    btn.addEventListener('click', () => {
+      langInput.value = btn.dataset.lang;
+      $$('.lang-option').forEach((other) => {
+        const on = other === btn;
+        other.classList.toggle('active', on);
+        other.setAttribute('aria-checked', on ? 'true' : 'false');
+      });
+      stopPreviewAudio();
+      previewPlayer.hidden = true;
+      renderVoiceOptions();
+      updateMessageChrome();
+    });
   });
+  renderVoiceOptions(health.defaultVoice || 'en-IN-NeerjaNeural');
+  updateMessageChrome();
 
   function syncCallButton() {
     const ready =
@@ -1447,17 +1531,12 @@ async function renderOutbound() {
     callBtn.disabled = !ready;
   }
 
-  function syncCount() {
-    countEl.textContent = String(messageInput.value.length);
-  }
-
   confirmInput.addEventListener('change', syncCallButton);
   phoneInput.addEventListener('input', syncCallButton);
   messageInput.addEventListener('input', () => {
-    syncCount();
+    updateMessageChrome();
     syncCallButton();
   });
-  syncCount();
   syncCallButton();
 
   $('#outbound-refresh').addEventListener('click', () => {
@@ -1489,33 +1568,50 @@ async function renderOutbound() {
       const previewBtn = $('#outbound-preview');
       previewBtn.disabled = true;
       previewBtn.textContent = 'Synthesizing…';
+      const requested = selectedVoice();
       const result = await api('/api/outbound/preview', {
         method: 'POST',
         body: JSON.stringify({
           phoneNumber: phoneInput.value.trim(),
           message: messageInput.value,
           repeatCount: Number(repeatInput.value || 1),
-          voice: selectedVoice(),
+          voice: requested,
         }),
       });
+      const actualVoice = result.audio?.voice || result.voice;
+      if (actualVoice && actualVoice !== requested) {
+        throw new Error(
+          `Voice mismatch: requested ${requested}, got ${actualVoice}`,
+        );
+      }
+      if (!result.audio?.preview?.base64) {
+        throw new Error(
+          result.audio?.error
+            ? `Preview audio unavailable (${result.audio.error})`
+            : 'Preview audio was not returned for the selected voice',
+        );
+      }
+      const voiceLabel =
+        allVoices.find((v) => v.id === (actualVoice || requested))?.label ||
+        actualVoice ||
+        requested;
       showNotice('Preview ready — listen below. No network call was made.');
       showResult('Preview', [
         `Destination ${result.phoneMasked || '—'}`,
-        `Voice ${result.voice || result.audio?.voice || '—'}`,
+        `Voice ${voiceLabel} (${actualVoice || requested})`,
+        `Language ${selectedLanguage() === 'te' ? 'Telugu' : 'English'}`,
         `Message length ${result.messageLength}`,
         `Repeat ${result.repeatCount}`,
         result.audio?.durationSeconds != null
-          ? `Audio ~${result.audio.durationSeconds}s (${result.audio.provider || 'tts'})`
+          ? `Audio ~${result.audio.durationSeconds}s (${result.audio.provider || 'tts'}${result.audio.cached ? ', cached' : ''})`
           : `Audio unavailable (${result.audio?.error || 'tts not ready'})`,
         `Token configured: ${result.preview?.tokenConfigured ? 'yes' : 'no'}`,
       ]);
       loadPreviewAudio(
-        result.audio?.preview,
-        `${result.voice || result.audio?.voice || 'voice'} · ~${result.audio?.durationSeconds ?? '—'}s`,
+        result.audio.preview,
+        `${voiceLabel} · ${actualVoice || requested} · ~${result.audio?.durationSeconds ?? '—'}s`,
       );
-      if (result.audio?.preview?.base64) {
-        await previewAudio.play().catch(() => {});
-      }
+      await previewAudio.play().catch(() => {});
     } catch (error) {
       showNotice(error.message, 'error');
       previewPlayer.hidden = true;
