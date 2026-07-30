@@ -34,24 +34,35 @@ export class CallStationTracker {
     this.sessionManager = sessionManager;
   }
 
-  #findBySession(session) {
+  #findBySession(session, { preferAppCallId = false } = {}) {
     if (!session) return null;
+    if (preferAppCallId && session.appCallId) {
+      const byApp = this.repository.findStreamTestCall({
+        appCallId: session.appCallId,
+      });
+      if (byApp) return byApp;
+    }
     return (
       this.repository.findStreamTestCall({
         streamSid: session.streamSid,
         callSid: session.callSid,
-        appCallId: session.appCallId,
+        appCallId: preferAppCallId ? null : session.appCallId,
         sessionId: session.id,
       }) ?? null
     );
   }
 
   onSessionOpened(session) {
-    const existing = this.#findBySession(session);
+    const existing = this.#findBySession(session, { preferAppCallId: true });
     if (existing) {
       const timeline = pushTimeline(existing, 'websocket_connected');
       return this.repository.updateStreamTestCall(existing.id, {
-        status: 'answered',
+        sessionId: session.id,
+        status: existing.status === 'initiated' || existing.status === 'requested'
+          ? 'answered'
+          : existing.status === 'answered'
+            ? 'answered'
+            : existing.status,
         wsAccepted: true,
         wsOpenedAt: existing.ws_opened_at || nowIso(),
         answeredAt: existing.answered_at || nowIso(),
@@ -72,9 +83,39 @@ export class CallStationTracker {
   }
 
   onStreamStarted(session, playback = {}) {
-    let row = this.#findBySession(session);
+    const byApp = session.appCallId
+      ? this.repository.findStreamTestCall({ appCallId: session.appCallId })
+      : null;
+    const bySession = this.#findBySession(session);
+    let row = byApp || bySession;
     if (!row) {
       row = this.onSessionOpened(session);
+    }
+    // Fold ephemeral WS row into the outbound dialer row when app_call_id matches.
+    if (byApp && bySession && byApp.id !== bySession.id) {
+      const mergedTimeline = [
+        ...(Array.isArray(byApp.timeline) ? byApp.timeline : []),
+        ...(Array.isArray(bySession.timeline) ? bySession.timeline : []),
+      ];
+      this.repository.updateStreamTestCall(byApp.id, {
+        sessionId: bySession.session_id || session.id,
+        streamSid: session.streamSid || bySession.stream_sid,
+        callSid: session.callSid || bySession.call_sid,
+        wsAccepted: true,
+        wsOpenedAt: bySession.ws_opened_at || byApp.ws_opened_at || nowIso(),
+        answeredAt: bySession.answered_at || byApp.answered_at || nowIso(),
+        timeline: mergedTimeline,
+        metadata: {
+          ...(byApp.metadata || {}),
+          mergedFrom: bySession.public_ref || bySession.id,
+        },
+      });
+      this.repository.updateStreamTestCall(bySession.id, {
+        status: 'rejected',
+        failureCategory: 'merged_into_outbound',
+        timeline: pushTimeline(bySession, 'merged_into_outbound', byApp.public_ref),
+      });
+      row = this.repository.getStreamTestCall(byApp.id);
     }
     const protocol = { ...(row.protocol_events || {}) };
     protocol.start = (protocol.start || 0) + 1;
@@ -101,9 +142,10 @@ export class CallStationTracker {
       }
     }
     return this.repository.updateStreamTestCall(row.id, {
+      sessionId: session.id,
       streamSid: session.streamSid,
       callSid: session.callSid,
-      appCallId: session.appCallId,
+      appCallId: session.appCallId || row.app_call_id,
       status: 'streaming',
       streamingAt: row.streaming_at || nowIso(),
       protocolEvents: protocol,

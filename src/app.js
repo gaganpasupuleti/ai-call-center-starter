@@ -126,6 +126,8 @@ export function createApp({
       pathname === '/app.js' ||
       pathname === '/health' ||
       pathname === '/api/settings' ||
+      pathname === '/api/dashboard' ||
+      pathname === '/api/summary' ||
       pathname.startsWith('/api/outbound/') ||
       pathname.startsWith('/api/call-station/')
     );
@@ -226,7 +228,45 @@ export function createApp({
       }
 
       if (request.method === 'GET' && pathname === '/api/dashboard') {
-        return sendJson(response, 200, repository.getDashboardMetrics());
+        const campaign = repository.getDashboardMetrics();
+        const liveSummary = station.getSummary?.() || null;
+        const recentLive = (station.listCalls?.({}) || []).slice(0, 12);
+        return sendJson(response, 200, {
+          ...campaign,
+          liveCallStation: liveSummary,
+          recentLiveCalls: recentLive,
+          // Prefer real SmartPing / outbound dialer rows when present.
+          recentCalls:
+            recentLive.length > 0
+              ? recentLive.map((item) => ({
+                  id: item.id,
+                  lead_name: item.destinationMasked || 'Live stream',
+                  phone: item.destinationMasked || '—',
+                  campaign_name: String(item.id || '').startsWith('OB-')
+                    ? 'Outbound dialer'
+                    : 'Voice stream',
+                  status: String(item.status || 'unknown').toLowerCase(),
+                  selected_digit: null,
+                  interpreted_response:
+                    item.durationSeconds != null
+                      ? `${item.durationSeconds}s audio`
+                      : item.timeline?.[item.timeline.length - 1]?.event || '—',
+                  duration_seconds: item.durationSeconds,
+                  started_at:
+                    item.requestedAt ||
+                    item.initiatedAt ||
+                    item.answeredAt ||
+                    null,
+                  created_at:
+                    item.requestedAt ||
+                    item.initiatedAt ||
+                    item.answeredAt ||
+                    null,
+                  stationRef: item.id,
+                  source: 'call-station',
+                }))
+              : campaign.recentCalls,
+        });
       }
 
       if (request.method === 'GET' && pathname === '/api/settings') {

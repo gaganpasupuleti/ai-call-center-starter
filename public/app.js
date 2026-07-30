@@ -109,12 +109,23 @@ async function renderDashboard() {
   const root = $('#page-root');
   root.innerHTML = loadingState();
   const data = await api('/api/dashboard');
+  const live = data.liveCallStation;
   root.innerHTML = `
+    ${
+      live
+        ? `<section class="grid-stats">
+            <article class="stat-card"><span>Live dials (DB)</span><strong>${live.totalTestCalls ?? 0}</strong></article>
+            <article class="stat-card"><span>Answered / streaming</span><strong>${live.answered ?? 0}</strong></article>
+            <article class="stat-card"><span>Completed</span><strong>${live.completed ?? 0}</strong></article>
+            <article class="stat-card"><span>Avg duration</span><strong>${live.averageCallDurationSeconds ?? '—'}s</strong></article>
+          </section>`
+        : ''
+    }
     <section class="grid-stats">
       <article class="stat-card"><span>Total leads</span><strong>${data.totalLeads}</strong></article>
       <article class="stat-card"><span>Consented leads</span><strong>${data.consentedLeads}</strong></article>
       <article class="stat-card"><span>Active campaigns</span><strong>${data.activeCampaigns}</strong></article>
-      <article class="stat-card"><span>Calls initiated</span><strong>${data.callsInitiated}</strong></article>
+      <article class="stat-card"><span>Campaign calls</span><strong>${data.callsInitiated}</strong></article>
       <article class="stat-card"><span>Answered calls</span><strong>${data.answeredCalls}</strong><em>Answer rate ${formatPercent(data.answerRate)}</em></article>
       <article class="stat-card"><span>Interested</span><strong>${data.interestedLeads}</strong><em>Conversion ${formatPercent(data.interestConversionRate)}</em></article>
       <article class="stat-card"><span>Callbacks</span><strong>${data.callbackRequests}</strong></article>
@@ -125,8 +136,10 @@ async function renderDashboard() {
 
     <section class="split">
       <article class="card">
-        <div class="card-header"><div><h3>Recent calls</h3><p>Latest outbound activity</p></div></div>
-        ${renderCallsTable(data.recentCalls, { compact: true })}
+        <div class="card-header"><div><h3>Recent calls</h3><p>Live dialer + stream activity from SQLite</p></div>
+          <a class="admin-btn ghost" href="#/call-station">Open Call Station</a>
+        </div>
+        ${renderRecentLiveCallsTable(data.recentCalls)}
       </article>
       <article class="card">
         <div class="card-header"><div><h3>Follow-ups needing attention</h3><p>Pending outbox tasks</p></div></div>
@@ -166,6 +179,38 @@ async function renderDashboard() {
         </table>
       </div>
     </article>
+  `;
+}
+
+function renderRecentLiveCallsTable(calls) {
+  if (!calls?.length) return emptyState('No live calls logged yet. Place a call from Outbound.');
+  const isStation = calls.some((c) => c.source === 'call-station' || c.stationRef);
+  if (!isStation) return renderCallsTable(calls, { compact: true });
+  return `
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Ref</th><th>Destination</th><th>Source</th><th>Status</th><th>Note</th><th>When</th><th></th>
+          </tr>
+        </thead>
+        <tbody>
+          ${calls
+            .map(
+              (call) => `<tr>
+                <td class="mono">${escapeHtml(call.stationRef || call.id)}</td>
+                <td>${escapeHtml(call.phone || call.lead_name || '—')}</td>
+                <td>${escapeHtml(call.campaign_name || '—')}</td>
+                <td>${badge(call.status)}</td>
+                <td>${escapeHtml(call.interpreted_response || '—')}</td>
+                <td>${escapeHtml(formatDate(call.started_at || call.created_at))}</td>
+                <td><a class="admin-btn ghost" href="#/call-station">View</a></td>
+              </tr>`,
+            )
+            .join('')}
+        </tbody>
+      </table>
+    </div>
   `;
 }
 
