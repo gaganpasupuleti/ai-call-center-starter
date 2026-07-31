@@ -19,7 +19,7 @@ export const OUTBOUND_VOICE_OPTIONS = [
   },
   {
     id: 'te-IN-ShrutiNeural',
-    label: 'ప్రియ',
+    label: 'Priya',
     description: 'Female',
     language: 'te',
     languageLabel: 'Telugu',
@@ -27,7 +27,7 @@ export const OUTBOUND_VOICE_OPTIONS = [
   },
   {
     id: 'te-IN-MohanNeural',
-    label: 'రవి',
+    label: 'Ravi',
     description: 'Male',
     language: 'te',
     languageLabel: 'Telugu',
@@ -38,11 +38,11 @@ export const OUTBOUND_VOICE_OPTIONS = [
 const ALLOWED_VOICES = new Set(OUTBOUND_VOICE_OPTIONS.map((v) => v.id));
 
 export const OUTBOUND_LANGUAGE_OPTIONS = [
-  { id: 'en', label: 'English', hint: 'Indian English' },
+  { id: 'en', label: 'English', hint: 'Write in English' },
   {
     id: 'te',
     label: 'Telugu',
-    hint: 'Type in తెలుగు script — English letters sound English',
+    hint: 'Write in Telugu letters (not English spelling)',
   },
 ];
 

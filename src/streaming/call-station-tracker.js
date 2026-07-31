@@ -194,22 +194,24 @@ export class CallStationTracker {
     const row = this.#findBySession(session);
     if (!row) return null;
     const selectedDigit = digit != null ? String(digit) : null;
-    const labelEn = label || null;
+    const labelEn =
+      label && !/[\u0900-\u0D7F]/.test(String(label))
+        ? String(label).slice(0, 48)
+        : null;
     return this.repository.updateStreamTestCall(row.id, {
       metadata: {
         ...(row.metadata || {}),
         selectedDigit,
         keypadLabel: labelEn,
-        keypadSpokenPreview: spokenPreview
-          ? String(spokenPreview).slice(0, 80)
-          : null,
+        // Keep spoken Telugu off admin-facing metadata; audio still plays.
+        keypadSpokenPreview: null,
         keypadAt: nowIso(),
       },
       timeline: pushTimeline(
         row,
         'keypad_digit',
         selectedDigit
-          ? `Key ${selectedDigit}${labelEn ? ` · ${labelEn}` : ''}`
+          ? `${labelEn || `Key ${selectedDigit}`} (pressed ${selectedDigit})`
           : null,
       ),
     });

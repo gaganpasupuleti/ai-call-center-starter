@@ -2,6 +2,41 @@
  * Privacy-safe helpers for Call Station monitoring DTOs.
  */
 
+const CALLER_ACTION_LABELS_EN = {
+  '1': 'Interested',
+  '2': 'Callback requested',
+  '9': 'Agent requested',
+  default: 'Unrecognized key',
+};
+
+function hasNonEnglishScript(value) {
+  // Telugu and other Indic scripts must never appear in admin notes.
+  return /[\u0900-\u0D7F]/.test(String(value ?? ''));
+}
+
+export function englishCallerAction(metadata = {}) {
+  const digit =
+    metadata.selectedDigit != null ? String(metadata.selectedDigit).trim() : null;
+  if (!digit) {
+    return {
+      digit: null,
+      label: null,
+      display: 'No key pressed',
+      short: 'None yet',
+    };
+  }
+  const mapped = CALLER_ACTION_LABELS_EN[digit] || CALLER_ACTION_LABELS_EN.default;
+  const raw = metadata.keypadLabel != null ? String(metadata.keypadLabel).trim() : '';
+  const label =
+    raw && !hasNonEnglishScript(raw) && raw.length <= 40 ? raw : mapped;
+  return {
+    digit,
+    label,
+    display: `${label} (pressed ${digit})`,
+    short: label,
+  };
+}
+
 export function maskPhone(value) {
   if (value === undefined || value === null || value === '') return null;
   const digits = String(value).replace(/\D/g, '');
@@ -183,15 +218,10 @@ export function toStationCallDto(row) {
           : 'received'
         : 'missing',
     },
-    keypadOption:
-      row.metadata?.selectedDigit != null
-        ? `Key ${row.metadata.selectedDigit}${
-            row.metadata?.keypadLabel
-              ? ` · ${String(row.metadata.keypadLabel).slice(0, 48)}`
-              : ''
-          }`
-        : 'Waiting / none',
-    keypadSpokenPreview: row.metadata?.keypadSpokenPreview ?? null,
+    keypadOption: englishCallerAction(row.metadata || {}).display,
+    keypadLabel: englishCallerAction(row.metadata || {}).short,
+    keypadDigit: englishCallerAction(row.metadata || {}).digit,
+    keypadSpokenPreview: null,
     failureReason: row.failure_category ?? null,
     timeline: timeline.map((item) => ({
       ts: item.ts ?? null,

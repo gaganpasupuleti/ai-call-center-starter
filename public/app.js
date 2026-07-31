@@ -109,108 +109,105 @@ async function renderDashboard() {
   const root = $('#page-root');
   root.innerHTML = loadingState();
   const data = await api('/api/dashboard');
-  const live = data.liveCallStation;
+  const live = data.liveCallStation || {};
   root.innerHTML = `
-    ${
-      live
-        ? `<section class="grid-stats">
-            <article class="stat-card"><span>Live dials (DB)</span><strong>${live.totalTestCalls ?? 0}</strong></article>
-            <article class="stat-card"><span>Answered / streaming</span><strong>${live.answered ?? 0}</strong></article>
-            <article class="stat-card"><span>Completed</span><strong>${live.completed ?? 0}</strong></article>
-            <article class="stat-card"><span>Avg duration</span><strong>${live.averageCallDurationSeconds ?? '—'}s</strong></article>
-          </section>`
-        : ''
-    }
-    <section class="grid-stats">
-      <article class="stat-card"><span>Total leads</span><strong>${data.totalLeads}</strong></article>
-      <article class="stat-card"><span>Consented leads</span><strong>${data.consentedLeads}</strong></article>
-      <article class="stat-card"><span>Active campaigns</span><strong>${data.activeCampaigns}</strong></article>
-      <article class="stat-card"><span>Campaign calls</span><strong>${data.callsInitiated}</strong></article>
-      <article class="stat-card"><span>Answered calls</span><strong>${data.answeredCalls}</strong><em>Answer rate ${formatPercent(data.answerRate)}</em></article>
-      <article class="stat-card"><span>Interested</span><strong>${data.interestedLeads}</strong><em>Conversion ${formatPercent(data.interestConversionRate)}</em></article>
-      <article class="stat-card"><span>Callbacks</span><strong>${data.callbackRequests}</strong></article>
-      <article class="stat-card"><span>Not interested</span><strong>${data.notInterested}</strong></article>
-      <article class="stat-card"><span>Human-agent requests</span><strong>${data.humanAgentRequests}</strong></article>
-      <article class="stat-card"><span>Failed / no-answer</span><strong>${data.failedOrNoAnswer}</strong></article>
-    </section>
+    <div class="cc-page">
+      <div class="cc-row cc-row-top">
+        <article class="cc-card">
+          <div class="cc-card-kicker">Snapshot</div>
+          <div class="cc-snapshot">
+            <div><span>Total calls</span><strong>${live.totalTestCalls ?? 0}</strong></div>
+            <div><span>Answered</span><strong>${live.answered ?? 0}</strong></div>
+            <div><span>Completed</span><strong>${live.completed ?? 0}</strong></div>
+            <div><span>Avg length</span><strong>${
+              live.averageCallDurationSeconds == null
+                ? '—'
+                : `${Math.round(Number(live.averageCallDurationSeconds))}s`
+            }</strong></div>
+          </div>
+        </article>
 
-    <section class="split">
-      <article class="card">
-        <div class="card-header"><div><h3>Recent calls</h3><p>Live dialer + stream activity from SQLite</p></div>
-          <a class="admin-btn ghost" href="#/call-station">Open Live Calls</a>
-        </div>
-        ${renderRecentLiveCallsTable(data.recentCalls)}
-      </article>
-      <article class="card">
-        <div class="card-header"><div><h3>Follow-ups needing attention</h3><p>Pending outbox tasks</p></div></div>
-        ${renderFollowUpsTable(data.pendingFollowUps, { compact: true })}
-      </article>
-    </section>
+        <article class="cc-card cc-card-accent">
+          <div class="cc-card-kicker">Operations</div>
+          <p class="cc-ops-copy">Place a call, then watch answer status and what the caller chose.</p>
+          <div class="cc-ops-actions">
+            <a class="admin-btn primary" href="#/outbound">New call</a>
+            <a class="admin-btn ghost" href="#/call-station">Live calls</a>
+          </div>
+        </article>
 
-    <article class="card">
-      <div class="card-header"><div><h3>Campaign summary</h3><p>Assigned leads and outcome totals</p></div></div>
-      <div class="table-wrap">
-        <table>
-          <thead>
-            <tr>
-              <th>Campaign</th><th>Status</th><th>Leads</th><th>Calls</th>
-              <th>Answered</th><th>Interested</th><th>Failed</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${
-              data.campaignSummaries.length === 0
-                ? `<tr><td colspan="7" class="empty">No campaigns yet.</td></tr>`
-                : data.campaignSummaries
-                    .map(
-                      (row) => `<tr>
-                        <td>${escapeHtml(row.name)}</td>
-                        <td>${badge(row.status)}</td>
-                        <td>${row.assigned_leads}</td>
-                        <td>${row.calls}</td>
-                        <td>${row.answered ?? 0}</td>
-                        <td>${row.interested ?? 0}</td>
-                        <td>${row.failed ?? 0}</td>
-                      </tr>`,
-                    )
-                    .join('')
-            }
-          </tbody>
-        </table>
+        <article class="cc-card">
+          <div class="cc-card-kicker">Campaigns</div>
+          <div class="cc-snapshot cc-snapshot-compact">
+            <div><span>Leads</span><strong>${data.totalLeads}</strong></div>
+            <div><span>Active</span><strong>${data.activeCampaigns}</strong></div>
+            <div><span>Interested</span><strong>${data.interestedLeads}</strong></div>
+            <div><span>Callbacks</span><strong>${data.callbackRequests}</strong></div>
+          </div>
+        </article>
       </div>
-    </article>
+
+      <div class="cc-row cc-row-main">
+        <article class="cc-card cc-fill">
+          <div class="cc-card-head">
+            <div>
+              <div class="cc-card-kicker">Recent calls</div>
+              <h3>What just happened</h3>
+            </div>
+            <a class="admin-btn ghost" href="#/call-station">Open live</a>
+          </div>
+          <div class="cc-scroll">
+            ${renderRecentLiveCallsTable(data.recentCalls)}
+          </div>
+        </article>
+
+        <article class="cc-card cc-fill cc-side">
+          <div class="cc-card-head">
+            <div>
+              <div class="cc-card-kicker">Follow-ups</div>
+              <h3>Needs attention</h3>
+            </div>
+          </div>
+          <div class="cc-scroll">
+            ${renderFollowUpsTable(data.pendingFollowUps, { compact: true })}
+          </div>
+        </article>
+      </div>
+    </div>
   `;
 }
 
 function renderRecentLiveCallsTable(calls) {
-  if (!calls?.length) return emptyState('No live calls logged yet. Place a call from Outbound.');
+  if (!calls?.length) return emptyState('No calls yet. Start from New call.');
   const isStation = calls.some((c) => c.source === 'call-station' || c.stationRef);
   if (!isStation) return renderCallsTable(calls, { compact: true });
   return `
-    <div class="table-wrap">
-      <table>
-        <thead>
-          <tr>
-            <th>Ref</th><th>Destination</th><th>Source</th><th>Pickup</th><th>Status</th><th>Note</th><th>When</th><th></th>
-          </tr>
-        </thead>
-        <tbody>
-          ${calls
-            .map(
-              (call) => `<tr>
-                <td class="mono">${escapeHtml(call.stationRef || call.id)}</td>
-                <td>${escapeHtml(call.phone || call.lead_name || '—')}</td>
-                <td>${escapeHtml(call.campaign_name || '—')}</td>
-                <td>${pickupBadge(call)}</td>
-                <td>${badge(call.status)}</td>
-                <td>${escapeHtml(call.interpreted_response || '—')}</td>
-                <td>${escapeHtml(formatDate(call.started_at || call.created_at))}</td>
-                <td><a class="admin-btn ghost" href="#/call-station">View</a></td>
-              </tr>`,
-            )
-            .join('')}
-        </tbody>
-      </table>
+    <div class="cc-call-list">
+      ${calls
+        .map((call) => {
+          const note = String(call.interpreted_response || '').trim();
+          const cleanNote =
+            !note || /[\u0900-\u0D7F]/.test(note)
+              ? call.pickup || '—'
+              : note;
+          return `
+          <a class="cc-call-row" href="#/call-station">
+            <div class="cc-call-row-top">
+              <strong class="mono">${escapeHtml(call.stationRef || call.id)}</strong>
+              <span>${escapeHtml(formatStationTime(call.started_at || call.created_at))}</span>
+            </div>
+            <div class="station-call-chips">
+              ${pickupBadge(call)}
+              ${stationStatusBadge(call.status)}
+            </div>
+            <div class="cc-call-row-meta">
+              <span>${escapeHtml(call.phone || '—')}</span>
+              <span>${escapeHtml(call.campaign_name || 'Call')}</span>
+              <span>${escapeHtml(cleanNote)}</span>
+            </div>
+          </a>`;
+        })
+        .join('')}
     </div>
   `;
 }
@@ -1029,10 +1026,32 @@ function audioLabel(status) {
   return humanStationStatus(status);
 }
 
-function keypadLabel(value) {
+function keypadLabel(value, row = null) {
+  if (row?.keypadLabel) return String(row.keypadLabel);
+  if (row?.keypadDigit != null) {
+    const map = {
+      '1': 'Interested',
+      '2': 'Callback requested',
+      '9': 'Agent requested',
+    };
+    return map[String(row.keypadDigit)] || 'Unrecognized key';
+  }
   const raw = String(value ?? '').trim();
-  if (!raw || /waiting|none|not supported/i.test(raw)) return 'None yet';
-  return raw;
+  if (!raw || /waiting|none|not supported|no key/i.test(raw)) return 'None yet';
+  // Strip any leftover Telugu/Indic script from older records.
+  if (/[\u0900-\u0D7F]/.test(raw)) {
+    const digitMatch = raw.match(/\b([129])\b/);
+    const map = {
+      '1': 'Interested',
+      '2': 'Callback requested',
+      '9': 'Agent requested',
+    };
+    return digitMatch ? map[digitMatch[1]] || 'Unrecognized key' : 'Key pressed';
+  }
+  return raw
+    .replace(/^Key\s+\d+\s*[·\-–—]?\s*/i, '')
+    .replace(/\s*\(pressed\s+\d+\)\s*$/i, '')
+    .trim() || raw;
 }
 
 function stationEventLabel(event) {
@@ -1103,14 +1122,13 @@ function appendStationActivity(message) {
 
 function renderStationCallsTable(items) {
   if (!items || items.length === 0) {
-    return `<div class="empty">No live calls yet. Place an outbound call, then watch it here.</div>`;
+    return `<div class="empty">No calls yet. Place one from New call, then watch it here.</div>`;
   }
   return `
     <div class="station-call-list">
       ${items
         .map((row) => {
-          const stream = connectionLabel(row.websocket?.result, 'stream');
-          const report = connectionLabel(row.webhook?.result, 'report');
+          const action = keypadLabel(row.keypadOption, row);
           return `
           <button type="button" class="station-call-card station-row" data-station-id="${escapeHtml(row.id)}">
             <div class="station-call-top">
@@ -1120,13 +1138,12 @@ function renderStationCallsTable(items) {
             <div class="station-call-chips">
               ${pickupBadge(row)}
               ${stationStatusBadge(row.status)}
+              ${statusChip(action === 'None yet' ? 'No choice yet' : action, action === 'None yet' ? '' : 'ok')}
             </div>
             <div class="station-call-meta">
               <span><em>To</em> ${escapeHtml(row.destinationMasked ?? '—')}</span>
               <span><em>Length</em> ${escapeHtml(stationDuration(row.durationSeconds))}</span>
-              <span><em>Key</em> ${escapeHtml(keypadLabel(row.keypadOption))}</span>
-              <span><em>Stream</em> ${escapeHtml(stream.label)}</span>
-              <span><em>Report</em> ${escapeHtml(report.label)}</span>
+              <span><em>Caller chose</em> ${escapeHtml(action)}</span>
             </div>
           </button>`;
         })
@@ -1167,7 +1184,7 @@ async function showStationCallDetails(id) {
             <div><span>Our number (DID)</span><strong>${escapeHtml(call.didMasked ?? '—')}</strong></div>
             <div><span>Answered at</span><strong>${escapeHtml(formatStationTime(call.answeredAt))}</strong></div>
             <div><span>Ended at</span><strong>${escapeHtml(formatStationTime(call.endedAt))}</strong></div>
-            <div><span>Key pressed</span><strong>${escapeHtml(keypadLabel(call.keypadOption))}</strong></div>
+            <div><span>Key pressed</span><strong>${escapeHtml(keypadLabel(call.keypadOption, call))}</strong></div>
             <div><span>Message audio</span><strong>${escapeHtml(audioLabel(call.audio?.status))}</strong></div>
           </div>
         </section>
@@ -1296,102 +1313,75 @@ async function renderCallStation() {
     .join('');
   const root = $('#page-root');
   root.innerHTML = `
-    <div class="station-page">
-      <div class="station-toolbar">
+    <div class="cc-page station-cc">
+      <div class="cc-toolbar">
         <div>
-          <p class="station-lead">Watch every test call — answered or missed, key presses, and auto hangup.</p>
-          <p class="station-hint">Updates every 5 seconds while this page is open. Click a call for full details.</p>
+          <p class="station-lead">See if they answered, what they chose, and when the call ended.</p>
         </div>
         <span id="station-live-pill" class="live-pill offline">Offline</span>
       </div>
 
-      <section class="grid-stats station-stats">
-        <article class="stat-card"><span>Total calls</span><strong id="stat-total">—</strong></article>
-        <article class="stat-card"><span>Ringing</span><strong id="stat-ringing">—</strong></article>
-        <article class="stat-card"><span>Answered</span><strong id="stat-answered">—</strong></article>
-        <article class="stat-card"><span>Completed</span><strong id="stat-completed">—</strong></article>
-        <article class="stat-card"><span>Failed / missed</span><strong id="stat-failed">—</strong></article>
-        <article class="stat-card"><span>Avg length</span><strong id="stat-avg-duration">—</strong></article>
-        <article class="stat-card"><span>Live streams</span><strong id="stat-active-ws">—</strong></article>
-        <article class="stat-card"><span>Report success</span><strong id="stat-webhook-rate">—</strong></article>
-      </section>
+      <div class="cc-metric-strip station-stats">
+        <article class="cc-metric"><span>Total</span><strong id="stat-total">—</strong></article>
+        <article class="cc-metric"><span>Ringing</span><strong id="stat-ringing">—</strong></article>
+        <article class="cc-metric"><span>Answered</span><strong id="stat-answered">—</strong></article>
+        <article class="cc-metric"><span>Done</span><strong id="stat-completed">—</strong></article>
+        <article class="cc-metric"><span>Missed</span><strong id="stat-failed">—</strong></article>
+        <article class="cc-metric"><span>Avg</span><strong id="stat-avg-duration">—</strong></article>
+        <article class="cc-metric"><span>Live now</span><strong id="stat-active-ws">—</strong></article>
+        <article class="cc-metric"><span>Reports OK</span><strong id="stat-webhook-rate">—</strong></article>
+      </div>
 
-      <article class="card station-panel">
-        <div class="card-header">
-          <div>
-            <h3>Find calls</h3>
-            <p>Filter by time, status, or call ID</p>
-          </div>
+      <div class="cc-slicers station-filters">
+        <label>From<input id="station-from" type="datetime-local" value="${escapeHtml(f.from)}" /></label>
+        <label>To<input id="station-to" type="datetime-local" value="${escapeHtml(f.to)}" /></label>
+        <label>Status
+          <select id="station-status">
+            <option value="">Any</option>
+            ${statusOptions}
+          </select>
+        </label>
+        <label>Result
+          <select id="station-outcome">
+            <option value="">Any</option>
+            <option value="completed" ${f.outcome === 'completed' ? 'selected' : ''}>Completed</option>
+            <option value="failed" ${f.outcome === 'failed' ? 'selected' : ''}>Failed</option>
+          </select>
+        </label>
+        <label class="cc-slicer-search">Search<input id="station-q" type="search" placeholder="TC-…" value="${escapeHtml(f.q)}" /></label>
+        <input type="hidden" id="station-websocket" value="${escapeHtml(f.websocket)}" />
+        <input type="hidden" id="station-webhook" value="${escapeHtml(f.webhook)}" />
+        <div class="filter-actions">
+          <button type="button" id="station-apply-filters">Apply</button>
+          <button type="button" class="secondary" id="station-reset-filters">Clear</button>
         </div>
-        <div class="station-filters">
-          <label>From<input id="station-from" type="datetime-local" value="${escapeHtml(f.from)}" /></label>
-          <label>To<input id="station-to" type="datetime-local" value="${escapeHtml(f.to)}" /></label>
-          <label>Call status
-            <select id="station-status">
-              <option value="">Any status</option>
-              ${statusOptions}
-            </select>
-          </label>
-          <label>Result
-            <select id="station-outcome">
-              <option value="">Any result</option>
-              <option value="completed" ${f.outcome === 'completed' ? 'selected' : ''}>Completed</option>
-              <option value="failed" ${f.outcome === 'failed' ? 'selected' : ''}>Failed</option>
-            </select>
-          </label>
-          <label>Live stream
-            <select id="station-websocket">
-              <option value="">Any</option>
-              <option value="accepted" ${f.websocket === 'accepted' ? 'selected' : ''}>Connected</option>
-              <option value="rejected" ${f.websocket === 'rejected' ? 'selected' : ''}>Failed</option>
-            </select>
-          </label>
-          <label>Call report
-            <select id="station-webhook">
-              <option value="">Any</option>
-              <option value="received" ${f.webhook === 'received' ? 'selected' : ''}>Received</option>
-              <option value="missing" ${f.webhook === 'missing' ? 'selected' : ''}>Not received</option>
-            </select>
-          </label>
-          <label class="full">Search call ID<input id="station-q" type="search" placeholder="e.g. TC-7828…" value="${escapeHtml(f.q)}" /></label>
-          <div class="filter-actions">
-            <button type="button" id="station-apply-filters">Apply filters</button>
-            <button type="button" class="secondary" id="station-reset-filters">Clear</button>
-          </div>
-        </div>
-      </article>
+      </div>
 
-      <article class="card station-panel">
-        <div class="card-header">
-          <div>
-            <h3>Recent calls</h3>
-            <p>Tap a card to open answer status, key press, and timeline</p>
-          </div>
-        </div>
-        <div id="station-table-host">${renderStationSkeleton()}</div>
-      </article>
-
-      <div class="station-side-grid">
-        <article class="card station-panel">
-          <div class="card-header">
+      <div class="cc-row cc-row-main">
+        <article class="cc-card cc-fill">
+          <div class="cc-card-head">
             <div>
-              <h3>Activity feed</h3>
-              <p>Latest refresh notes</p>
+              <div class="cc-card-kicker">Recent calls</div>
+              <h3>Tap a call for full details</h3>
             </div>
           </div>
-          <div id="station-activity-log" class="station-activity"></div>
+          <div id="station-table-host" class="cc-scroll">${renderStationSkeleton()}</div>
         </article>
-
-        <details class="panel-collapse station-panel">
-          <summary>Safety gates (advanced)</summary>
-          <div class="panel-body">
-            <p class="muted">These server checks must pass before a live test call can be placed from this screen.</p>
-            <div id="station-gate-host" class="gate-grid">${renderStationSkeleton()}</div>
-            <button type="button" disabled title="Live test calls require server-side approval.">
-              Place test call
-            </button>
+        <article class="cc-card cc-fill cc-side">
+          <div class="cc-card-head">
+            <div>
+              <div class="cc-card-kicker">Activity</div>
+              <h3>Live refresh</h3>
+            </div>
           </div>
-        </details>
+          <div id="station-activity-log" class="station-activity cc-scroll"></div>
+          <details class="panel-collapse station-gates">
+            <summary>Advanced checks</summary>
+            <div class="panel-body">
+              <div id="station-gate-host" class="gate-grid">${renderStationSkeleton()}</div>
+            </div>
+          </details>
+        </article>
       </div>
     </div>
   `;
@@ -1431,41 +1421,32 @@ async function renderOutbound() {
   const gatesOpen = health.liveGatesOpen === true;
   const ttsReady = health.tts?.ready === true;
   root.innerHTML = `
-    <section class="admin-section outbound-admin">
-      <div class="admin-toolbar">
-        <div class="admin-toolbar-copy">
-          <h3>New call</h3>
-          <p>Write a message, pick a voice, preview safely — then confirm to dial.</p>
+    <section class="cc-page outbound-cc">
+      <div class="cc-toolbar">
+        <div>
+          <p class="station-lead">Write what the caller hears, pick a voice, preview, then place one call.</p>
         </div>
         <button type="button" class="admin-btn ghost" id="outbound-refresh">Refresh</button>
       </div>
 
-      <div class="admin-pane">
-        <div class="admin-pane-header">Dialer</div>
-        <div class="admin-pane-body">
+      <div class="outbound-grid">
+        <article class="cc-card outbound-compose-card">
+          <div class="cc-card-kicker">Compose call</div>
           <div class="admin-status-row" aria-label="Dialer status">
-            <span class="admin-chip ${gatesOpen ? 'ok' : 'warn'}">${gatesOpen ? 'Ready' : 'Locked'}</span>
-            <span class="admin-chip ${ttsReady ? 'ok' : 'danger'}">${ttsReady ? 'Speech ready' : 'Speech offline'}</span>
-            <span class="admin-chip">Line ${escapeHtml(health.didMasked || '—')}</span>
+            <span class="admin-chip ${gatesOpen ? 'ok' : 'warn'}">${gatesOpen ? 'Ready to dial' : 'Dialing locked'}</span>
+            <span class="admin-chip ${ttsReady ? 'ok' : 'danger'}">${ttsReady ? 'Voice ready' : 'Voice offline'}</span>
+            <span class="admin-chip">From ${escapeHtml(health.didMasked || '—')}</span>
           </div>
-          <p class="admin-status-note">${escapeHtml(
-            gatesOpen
-              ? 'Preview never dials. Place call places one live call after you confirm.'
-              : health.liveCallMessage || 'Live dialing is locked until dialer mode is enabled.',
-          )}</p>
-
           ${
             gatesOpen
-              ? ''
-              : `<div class="admin-alert">
-                  Live dialing is disabled until <code>OUTBOUND_DIALER_LIVE=true</code> is set with SmartPing credentials.
-                </div>`
+              ? `<p class="admin-status-note">Preview only plays here. Place call dials after you confirm.</p>`
+              : `<div class="admin-alert">Live dialing is locked until dialer mode is enabled on the server.</div>`
           }
 
           <form class="admin-compose" id="outbound-form">
             <div class="admin-field-row">
               <div class="admin-field">
-                <label for="outbound-phone">Mobile</label>
+                <label for="outbound-phone">Mobile number</label>
                 <input
                   id="outbound-phone"
                   name="phone"
@@ -1476,32 +1457,35 @@ async function renderOutbound() {
                 />
               </div>
               <div class="admin-field admin-field-repeat">
-                <label for="outbound-repeat">Repeats</label>
+                <label for="outbound-repeat">Play message</label>
                 <select id="outbound-repeat" name="repeat">
                   ${[1, 2, 3, 4, 5]
-                    .map((n) => `<option value="${n}" ${n === 1 ? 'selected' : ''}>${n}×</option>`)
+                    .map((n) => `<option value="${n}" ${n === 1 ? 'selected' : ''}>${n} time${n > 1 ? 's' : ''}</option>`)
                     .join('')}
                 </select>
               </div>
             </div>
+
             <div class="admin-field">
-              <label for="outbound-message">Spoken message</label>
+              <label for="outbound-message">What should the caller hear?</label>
               <textarea
                 id="outbound-message"
                 name="message"
                 maxlength="500"
-                rows="4"
+                rows="5"
                 placeholder="Hi, hello! How are you doing today?"
                 required
               ></textarea>
               <p class="admin-hint" id="outbound-message-hint"><span id="outbound-count">0</span> / 500</p>
+              <p class="outbound-tip" id="outbound-message-tip">Write a short, friendly message. Keep it under 500 characters.</p>
             </div>
+
             <div class="admin-field">
               <label>Language</label>
               <div class="seg-toggle" role="radiogroup" aria-label="Speech language" id="outbound-lang-toggle">
                 ${(health.languageOptions || [
-                  { id: 'en', label: 'English', hint: 'Indian English' },
-                  { id: 'te', label: 'Telugu', hint: 'తెలుగు — use Telugu script' },
+                  { id: 'en', label: 'English', hint: 'Write in English' },
+                  { id: 'te', label: 'Telugu', hint: 'Write in Telugu letters' },
                 ])
                   .map((option) => {
                     const selected = option.id === 'en';
@@ -1517,20 +1501,31 @@ async function renderOutbound() {
                   .join('')}
               </div>
             </div>
+
             <div class="admin-field">
               <label>Voice</label>
               <div class="voice-toggle" role="radiogroup" aria-label="Voice" id="outbound-voice-toggle"></div>
               <input type="hidden" id="outbound-voice" value="${escapeHtml(health.defaultVoice || 'en-IN-NeerjaNeural')}" />
               <input type="hidden" id="outbound-lang" value="en" />
             </div>
-            <label class="admin-confirm">
-              <input type="checkbox" id="outbound-interactive" />
-              <span>Interactive keypad — listen for 1 / 2 / 9 after the message</span>
-            </label>
-            <label class="admin-confirm">
-              <input type="checkbox" id="outbound-confirm" ${gatesOpen ? '' : 'disabled'} />
-              <span>Confirm one live call to this number</span>
-            </label>
+
+            <div class="outbound-options">
+              <label class="admin-confirm">
+                <input type="checkbox" id="outbound-interactive" />
+                <span>
+                  <strong>Ask the caller to press a key</strong>
+                  <small>After the message: 1 = Interested · 2 = Call me back · 9 = Talk to an agent</small>
+                </span>
+              </label>
+              <label class="admin-confirm">
+                <input type="checkbox" id="outbound-confirm" ${gatesOpen ? '' : 'disabled'} />
+                <span>
+                  <strong>Yes — place one live call now</strong>
+                  <small>Required before Place call works</small>
+                </span>
+              </label>
+            </div>
+
             <div class="admin-actions">
               <button type="button" class="admin-btn ghost" id="outbound-preview">Preview speech</button>
               <button type="button" class="admin-btn primary" id="outbound-call" disabled>
@@ -1538,20 +1533,30 @@ async function renderOutbound() {
               </button>
             </div>
           </form>
+        </article>
 
-          <div id="outbound-result" class="admin-result" hidden></div>
-          <div id="outbound-preview-player" class="outbound-preview-player" hidden>
-            <div class="outbound-preview-head">
-              <strong>Preview</strong>
-              <span class="muted" id="outbound-preview-meta"></span>
+        <aside class="outbound-side">
+          <article class="cc-card">
+            <div class="cc-card-kicker">Preview</div>
+            <div id="outbound-preview-player" class="outbound-preview-player" hidden>
+              <div class="outbound-preview-head">
+                <strong>Listen here first</strong>
+                <span class="muted" id="outbound-preview-meta"></span>
+              </div>
+              <audio id="outbound-preview-audio" controls preload="none"></audio>
+              <div class="admin-actions">
+                <button type="button" class="admin-btn primary" id="outbound-play">Play</button>
+                <button type="button" class="admin-btn ghost" id="outbound-stop">Stop</button>
+              </div>
             </div>
-            <audio id="outbound-preview-audio" controls preload="none"></audio>
-            <div class="admin-actions">
-              <button type="button" class="admin-btn primary" id="outbound-play">Play</button>
-              <button type="button" class="admin-btn ghost" id="outbound-stop">Stop</button>
-            </div>
-          </div>
-        </div>
+            <p class="muted" id="outbound-preview-empty">Preview your message before dialing. Nothing is sent until you place the call.</p>
+          </article>
+          <article class="cc-card">
+            <div class="cc-card-kicker">Result</div>
+            <div id="outbound-result" class="admin-result" hidden></div>
+            <p class="muted" id="outbound-result-empty">Call status will show here after you dial.</p>
+          </article>
+        </aside>
       </div>
     </section>
   `;
@@ -1576,21 +1581,24 @@ async function renderOutbound() {
   const allVoices = health.voiceOptions || [
     { id: 'en-IN-NeerjaNeural', label: 'Neerja', description: 'Female', language: 'en', gender: 'female' },
     { id: 'en-IN-PrabhatNeural', label: 'Prabhat', description: 'Male', language: 'en', gender: 'male' },
-    { id: 'te-IN-ShrutiNeural', label: 'ప్రియ', description: 'Female', language: 'te', gender: 'female' },
-    { id: 'te-IN-MohanNeural', label: 'రవి', description: 'Male', language: 'te', gender: 'male' },
+    { id: 'te-IN-ShrutiNeural', label: 'Priya', description: 'Female', language: 'te', gender: 'female' },
+    { id: 'te-IN-MohanNeural', label: 'Ravi', description: 'Male', language: 'te', gender: 'male' },
   ];
   const langOptions = health.languageOptions || [
-    { id: 'en', label: 'English', hint: 'Indian English' },
+    { id: 'en', label: 'English', hint: 'Write in English' },
     {
       id: 'te',
       label: 'Telugu',
-      hint: 'Type in తెలుగు script — English letters sound English',
+      hint: 'Write in Telugu letters (not English spelling)',
     },
   ];
   const TELUGU_SAMPLE =
     'నమస్కారం! మీరు ఎలా ఉన్నారు? ఈరోజు మీ రోజు చాలా బాగా సాగుతుందని ఆశిస్తున్నాను!';
   const ENGLISH_SAMPLE =
     'Hi hello! How are you doing today? Hope you are having a wonderful day!';
+  const previewEmpty = $('#outbound-preview-empty');
+  const resultEmpty = $('#outbound-result-empty');
+  const messageTip = $('#outbound-message-tip');
 
   function looksLikeEnglishOnly(text) {
     const value = String(text || '').trim();
@@ -1633,6 +1641,7 @@ async function renderOutbound() {
   function loadPreviewAudio(preview, metaLabel = '') {
     if (!preview?.base64 || !preview?.mimeType) {
       previewPlayer.hidden = true;
+      if (previewEmpty) previewEmpty.hidden = false;
       clearPreviewAudio();
       return;
     }
@@ -1646,14 +1655,20 @@ async function renderOutbound() {
     previewAudio.load();
     previewMeta.textContent = metaLabel;
     previewPlayer.hidden = false;
+    if (previewEmpty) previewEmpty.hidden = true;
   }
 
   function updateMessageChrome() {
     const lang = selectedLanguage();
-    const meta = langOptions.find((o) => o.id === lang);
     const count = String(messageInput.value.length);
-    messageHint.innerHTML = `<span id="outbound-count">${count}</span> / 500 · ${escapeHtml(meta?.hint || '')}`;
+    messageHint.innerHTML = `<span id="outbound-count">${count}</span> / 500`;
     messageInput.placeholder = lang === 'te' ? TELUGU_SAMPLE : ENGLISH_SAMPLE;
+    if (messageTip) {
+      messageTip.textContent =
+        lang === 'te'
+          ? 'Telugu tip: type Telugu letters. English spelling will sound English on the call.'
+          : 'English tip: keep it short and clear. The caller hears exactly what you write.';
+    }
   }
 
   function applyLanguageSample(lang) {
@@ -1774,6 +1789,7 @@ async function renderOutbound() {
 
   function showResult(title, rows) {
     resultHost.hidden = false;
+    if (resultEmpty) resultEmpty.hidden = true;
     resultHost.innerHTML = `
       <strong>${escapeHtml(title)}</strong>
       ${rows.map((row) => `<div>${escapeHtml(row)}</div>`).join('')}
@@ -1898,7 +1914,7 @@ async function renderOutbound() {
 }
 
 const titles = {
-  dashboard: ['Overview', 'Dashboard'],
+  dashboard: ['Command center', 'Dashboard'],
   leads: ['Contacts', 'Leads'],
   campaigns: ['Outbound', 'Campaigns'],
   calls: ['Activity', 'Calls'],
