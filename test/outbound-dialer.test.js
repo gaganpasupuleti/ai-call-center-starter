@@ -110,6 +110,31 @@ test('phone normalization accepts 10 digits and strips 91 prefix', () => {
   assert.equal(normalizeOutboundVoice('').voice, 'en-IN-NeerjaNeural');
 });
 
+test('Telugu preview rejects English-only text', async () => {
+  await withServer(async ({ base }) => {
+    const denied = await postJson(base, '/api/outbound/preview', {
+      phoneNumber: PHONE,
+      message: 'Hi, hello! How are you doing today?',
+      voice: 'te-IN-ShrutiNeural',
+    });
+    assert.equal(denied.response.status, 400);
+    assert.equal(denied.body.code, 'tts_telugu_script_required');
+
+    const allowed = await postJson(base, '/api/outbound/preview', {
+      phoneNumber: PHONE,
+      message: 'నమస్కారం! మీరు ఎలా ఉన్నారు?',
+      voice: 'te-IN-ShrutiNeural',
+    });
+    assert.equal(allowed.response.status, 200);
+    assert.equal(allowed.body.voice, 'te-IN-ShrutiNeural');
+    if (allowed.body.audio?.estimated === false) {
+      assert.equal(allowed.body.audio.locale, 'te-IN');
+      assert.equal(allowed.body.audio.hasTeluguScript, true);
+      assert.ok(allowed.body.audio.preview?.base64);
+    }
+  });
+});
+
 test('mulaw encode rejects silence and concat respects repeat', () => {
   const pcm = Buffer.alloc(1600);
   for (let i = 0; i < 800; i += 1) pcm.writeInt16LE(i % 2 === 0 ? 4000 : -4000, i * 2);

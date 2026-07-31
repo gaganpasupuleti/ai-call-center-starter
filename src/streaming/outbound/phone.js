@@ -39,7 +39,11 @@ const ALLOWED_VOICES = new Set(OUTBOUND_VOICE_OPTIONS.map((v) => v.id));
 
 export const OUTBOUND_LANGUAGE_OPTIONS = [
   { id: 'en', label: 'English', hint: 'Indian English' },
-  { id: 'te', label: 'Telugu', hint: 'తెలుగు — use Telugu script' },
+  {
+    id: 'te',
+    label: 'Telugu',
+    hint: 'Type in తెలుగు script — English letters sound English',
+  },
 ];
 
 /**

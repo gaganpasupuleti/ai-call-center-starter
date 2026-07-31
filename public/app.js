@@ -1423,8 +1423,20 @@ async function renderOutbound() {
   ];
   const langOptions = health.languageOptions || [
     { id: 'en', label: 'English', hint: 'Indian English' },
-    { id: 'te', label: 'Telugu', hint: 'తెలుగు — use Telugu script' },
+    {
+      id: 'te',
+      label: 'Telugu',
+      hint: 'Type in తెలుగు script — English letters sound English',
+    },
   ];
+  const TELUGU_SAMPLE = 'నమస్కారం! మీరు ఎలా ఉన్నారు?';
+  const ENGLISH_SAMPLE = 'Hi, hello! How are you doing today?';
+
+  function looksLikeEnglishOnly(text) {
+    const value = String(text || '').trim();
+    if (!value) return true;
+    return !/[\u0C00-\u0C7F]/.test(value);
+  }
 
   function selectedVoice() {
     return voiceInput.value || health.defaultVoice || 'en-IN-NeerjaNeural';
@@ -1456,10 +1468,21 @@ async function renderOutbound() {
     const meta = langOptions.find((o) => o.id === lang);
     const count = String(messageInput.value.length);
     messageHint.innerHTML = `<span id="outbound-count">${count}</span> / 500 · ${escapeHtml(meta?.hint || '')}`;
-    messageInput.placeholder =
-      lang === 'te'
-        ? 'నమస్కారం! మీరు ఎలా ఉన్నారు?'
-        : 'Hi, hello! How are you doing today?';
+    messageInput.placeholder = lang === 'te' ? TELUGU_SAMPLE : ENGLISH_SAMPLE;
+  }
+
+  function applyLanguageSample(lang) {
+    const current = messageInput.value.trim();
+    if (lang === 'te' && looksLikeEnglishOnly(current)) {
+      messageInput.value = TELUGU_SAMPLE;
+    } else if (
+      lang === 'en' &&
+      (current === TELUGU_SAMPLE || current === '')
+    ) {
+      messageInput.value = ENGLISH_SAMPLE;
+    }
+    updateMessageChrome();
+    syncCallButton();
   }
 
   function renderVoiceOptions(preferredVoice = null) {
@@ -1524,7 +1547,7 @@ async function renderOutbound() {
       stopPreviewAudio();
       previewPlayer.hidden = true;
       renderVoiceOptions();
-      updateMessageChrome();
+      applyLanguageSample(btn.dataset.lang);
     });
   });
   renderVoiceOptions(health.defaultVoice || 'en-IN-NeerjaNeural');

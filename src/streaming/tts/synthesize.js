@@ -24,8 +24,9 @@ const DEFAULT_CACHE_DIR = path.resolve(
   'tts-cache',
 );
 
-const CACHE_VERSION = 'v2';
+const CACHE_VERSION = 'v3';
 const ALLOWED_VOICES = new Set(OUTBOUND_VOICE_OPTIONS.map((v) => v.id));
+const TELUGU_SCRIPT_RE = /[\u0C00-\u0C7F]/;
 
 export class TtsError extends Error {
   constructor(message, code = 'tts_error', statusCode = 500) {
@@ -54,12 +55,38 @@ function assertAllowedVoice(voice) {
   const id = String(voice ?? '').trim();
   if (!ALLOWED_VOICES.has(id)) {
     throw new TtsError(
-      'Unsupported TTS voice — choose Neerja, Prabhat, Shruti, or Mohan',
+      'Unsupported TTS voice — choose Neerja, Prabhat, ప్రియ, or రవి',
       'tts_invalid_voice',
       400,
     );
   }
   return id;
+}
+
+/** True when the message includes Telugu Unicode letters. */
+export function textHasTeluguScript(text) {
+  return TELUGU_SCRIPT_RE.test(String(text ?? ''));
+}
+
+/**
+ * Latin-heavy copy on a Telugu voice sounds English. Detect that mismatch.
+ */
+export function teluguVoiceNeedsTeluguScript(voice, text) {
+  const locale = localeFromVoice(voice);
+  if (locale !== 'te-IN') return false;
+  return !textHasTeluguScript(text);
+}
+
+function buildSsml(text, voice, locale) {
+  const body = escapeXml(text);
+  // Match msedge-tts default template + explicit xml:lang so Telugu voices stay on te-IN.
+  return (
+    `<speak version="1.0" xmlns="http://www.w3.org/2001/10/synthesis" ` +
+    `xmlns:mstts="https://www.w3.org/2001/mstts" xml:lang="${locale}">` +
+    `<voice name="${voice}">` +
+    `<prosody pitch="+0Hz" rate="+0%" volume="+0%">${body}</prosody>` +
+    `</voice></speak>`
+  );
 }
 
 function runFfmpegToPcm(inputPath) {
@@ -85,9 +112,8 @@ function runFfmpegToPcm(inputPath) {
       windowsHide: true,
     });
     const chunks = [];
-    const errors = [];
     child.stdout.on('data', (chunk) => chunks.push(chunk));
-    child.stderr.on('data', (chunk) => errors.push(chunk));
+    child.stderr.on('data', () => {});
     child.on('error', (error) => {
       reject(
         new TtsError(
@@ -99,10 +125,7 @@ function runFfmpegToPcm(inputPath) {
     child.on('close', (code) => {
       if (code !== 0) {
         reject(
-          new TtsError(
-            'ffmpeg conversion failed',
-            'tts_ffmpeg_failed',
-          ),
+          new TtsError('ffmpeg conversion failed', 'tts_ffmpeg_failed'),
         );
         return;
       }
@@ -177,6 +200,7 @@ export async function synthesizeToMulaw(
   {
     voice = process.env.OUTBOUND_TTS_VOICE || 'en-IN-NeerjaNeural',
     cacheDir = DEFAULT_CACHE_DIR,
+    requireMatchingScript = false,
   } = {},
 ) {
   const trimmed = String(text ?? '').trim();
@@ -201,6 +225,15 @@ export async function synthesizeToMulaw(
     );
   }
 
+  const scriptMismatch = teluguVoiceNeedsTeluguScript(requestedVoice, trimmed);
+  if (requireMatchingScript && scriptMismatch) {
+    throw new TtsError(
+      'Telugu voices need Telugu script (తెలుగు). English letters will sound English.',
+      'tts_telugu_script_required',
+      400,
+    );
+  }
+
   const health = getTtsHealth({ voice: requestedVoice, cacheDir });
   if (!health.ready) {
     throw new TtsError(
@@ -215,7 +248,6 @@ export async function synthesizeToMulaw(
   const cachedPath = path.join(cacheDir, `${key}.ulaw`);
   const metaPath = path.join(cacheDir, `${key}.json`);
 
-  // Cached mulaw: require matching voice meta + energy floor.
   if (existsSync(cachedPath) && readCacheMeta(metaPath, requestedVoice)) {
     const bytes = readFileSync(cachedPath);
     if (bytes.length > 0) {
@@ -233,6 +265,8 @@ export async function synthesizeToMulaw(
           voice: requestedVoice,
           requestedVoice,
           locale: expectedLocale,
+          scriptMismatch,
+          hasTeluguScript: textHasTeluguScript(trimmed),
           cached: true,
           cacheKey: key,
         };
@@ -261,7 +295,8 @@ export async function synthesizeToMulaw(
       );
     }
 
-    const { audioFilePath } = await tts.toFile(workDir, escapeXml(trimmed));
+    const ssml = buildSsml(trimmed, requestedVoice, expectedLocale);
+    const { audioFilePath } = await tts.rawToFile(workDir, ssml);
     try {
       tts.close();
     } catch {
@@ -290,6 +325,8 @@ export async function synthesizeToMulaw(
       voice: requestedVoice,
       requestedVoice,
       locale: expectedLocale,
+      scriptMismatch,
+      hasTeluguScript: textHasTeluguScript(trimmed),
       cached: false,
       cacheKey: key,
     };

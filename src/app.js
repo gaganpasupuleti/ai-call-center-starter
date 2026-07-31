@@ -41,6 +41,7 @@ import {
   getTtsHealth,
   synthesizeToMulaw,
   TtsError,
+  teluguVoiceNeedsTeluguScript,
 } from './streaming/tts/synthesize.js';
 import {
   concatMulawWithRepeats,
@@ -370,6 +371,14 @@ export function createApp({
             code: voicePick.code,
           });
         }
+        if (teluguVoiceNeedsTeluguScript(voicePick.voice, message.text)) {
+          return sendJson(response, 400, {
+            error:
+              'Telugu voices need Telugu script (తెలుగు). English letters will sound English — type in Telugu.',
+            code: 'tts_telugu_script_required',
+            requestedVoice: voicePick.voice,
+          });
+        }
         if (!config.smartPing?.baseUrl || !config.smartPing?.didNumber) {
           return sendJson(response, 400, {
             error: 'SmartPing base URL and DID must be configured',
@@ -396,6 +405,7 @@ export function createApp({
         try {
           const synthesized = await synthesizeToMulaw(message.text, {
             voice: voicePick.voice,
+            requireMatchingScript: true,
           });
           if (synthesized.voice !== voicePick.voice) {
             return sendJson(response, 500, {
@@ -422,6 +432,7 @@ export function createApp({
             voice: synthesized.voice,
             requestedVoice: voicePick.voice,
             locale: synthesized.locale || null,
+            hasTeluguScript: synthesized.hasTeluguScript === true,
             cached: synthesized.cached === true,
             ttsReady: true,
             repeatCount,
@@ -431,7 +442,11 @@ export function createApp({
           const code = error instanceof TtsError ? error.code : 'tts_error';
           const status =
             error instanceof TtsError ? error.statusCode || 500 : 500;
-          if (code === 'tts_invalid_voice' || code === 'tts_voice_mismatch') {
+          if (
+            code === 'tts_invalid_voice' ||
+            code === 'tts_voice_mismatch' ||
+            code === 'tts_telugu_script_required'
+          ) {
             return sendJson(response, status, {
               error: error.message,
               code,
@@ -483,6 +498,14 @@ export function createApp({
             code: voicePick.code,
           });
         }
+        if (teluguVoiceNeedsTeluguScript(voicePick.voice, message.text)) {
+          return sendJson(response, 400, {
+            error:
+              'Telugu voices need Telugu script (తెలుగు). English letters will sound English — type in Telugu.',
+            code: 'tts_telugu_script_required',
+            requestedVoice: voicePick.voice,
+          });
+        }
         if (!confirm) {
           return sendJson(response, 403, {
             error: 'Explicit confirm is required before placing a live call',
@@ -504,6 +527,7 @@ export function createApp({
         try {
           synthesized = await synthesizeToMulaw(message.text, {
             voice: voicePick.voice,
+            requireMatchingScript: true,
           });
         } catch (error) {
           const status = error?.statusCode || 500;
