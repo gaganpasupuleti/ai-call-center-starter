@@ -33,6 +33,8 @@ import {
   normalizeOutboundPhone,
   normalizeOutboundVoice,
   normalizeRepeatCount,
+  normalizeInteractiveMenu,
+  buildInteractivePromptText,
   OUTBOUND_VOICE_OPTIONS,
   OUTBOUND_LANGUAGE_OPTIONS,
 } from './streaming/outbound/phone.js';
@@ -517,6 +519,31 @@ export function createApp({
           });
         }
 
+        const interactivePick = normalizeInteractiveMenu({
+          interactive: body.interactive === true,
+          voice: voicePick.voice,
+          menu: body.interactiveMenu || body.menu,
+        });
+        if (!interactivePick.ok) {
+          return sendJson(response, 400, {
+            error: interactivePick.error,
+            code: interactivePick.code,
+          });
+        }
+
+        const spokenText = buildInteractivePromptText(message.text, {
+          interactive: interactivePick.interactive,
+          voice: voicePick.voice,
+        });
+        if (teluguVoiceNeedsTeluguScript(voicePick.voice, spokenText)) {
+          return sendJson(response, 400, {
+            error:
+              'Telugu voices need Telugu script (తెలుగు). English letters will sound English — type in Telugu.',
+            code: 'tts_telugu_script_required',
+            requestedVoice: voicePick.voice,
+          });
+        }
+
         const liveGatesOpen = outboundLiveReady();
         if (!liveGatesOpen) {
           return sendJson(response, 403, {
@@ -529,7 +556,7 @@ export function createApp({
 
         let synthesized;
         try {
-          synthesized = await synthesizeToMulaw(message.text, {
+          synthesized = await synthesizeToMulaw(spokenText, {
             voice: voicePick.voice,
             requireMatchingScript: true,
           });
@@ -549,14 +576,40 @@ export function createApp({
           });
         }
 
+        const responseAudio = {};
+        if (interactivePick.interactive) {
+          try {
+            for (const [digit, text] of Object.entries(interactivePick.menu)) {
+              const clip = await synthesizeToMulaw(text, {
+                voice: voicePick.voice,
+                requireMatchingScript: true,
+              });
+              responseAudio[digit] = {
+                text,
+                bytes: clip.bytes,
+                durationSeconds: clip.durationSeconds,
+              };
+            }
+          } catch (error) {
+            const status = error?.statusCode || 500;
+            return sendJson(response, status, {
+              error: error?.message || 'Interactive TTS failed',
+              code: error?.code || 'tts_error',
+            });
+          }
+        }
+
         const prompt = outboundPrompts.create({
           phoneMasked: phone.masked,
-          messageLength: message.length,
+          messageLength: spokenText.length,
           repeatCount,
           mulawBytes: synthesized.bytes,
           durationSeconds: synthesized.durationSeconds,
           voice: synthesized.voice,
           provider: synthesized.provider,
+          interactive: interactivePick.interactive,
+          menu: interactivePick.menu,
+          responses: interactivePick.interactive ? responseAudio : null,
         });
 
         let stationRow = null;
@@ -564,7 +617,7 @@ export function createApp({
           stationRow = station.recordOutboundDialerCall?.({
             appCallId: prompt.appCallId,
             destinationMasked: phone.masked,
-            messageLength: message.length,
+            messageLength: spokenText.length,
             repeatCount,
             voice: synthesized.voice,
             durationSeconds: synthesized.durationSeconds,
@@ -580,6 +633,7 @@ export function createApp({
             app_call_id: prompt.appCallId,
             source: 'outbound-dialer',
             repeat_count: String(repeatCount),
+            interactive: interactivePick.interactive ? '1' : '0',
           },
         });
 
@@ -603,8 +657,12 @@ export function createApp({
           appCallId: prompt.appCallId,
           stationRef: stationRow?.public_ref || null,
           phoneMasked: phone.masked,
-          messageLength: message.length,
+          messageLength: spokenText.length,
           repeatCount,
+          interactive: interactivePick.interactive,
+          interactiveDigits: interactivePick.interactive
+            ? Object.keys(interactivePick.menu).filter((k) => k !== 'default')
+            : [],
           audio: {
             durationSeconds: Number(
               (synthesized.durationSeconds * repeatCount).toFixed(3),

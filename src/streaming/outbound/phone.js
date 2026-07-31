@@ -106,6 +106,79 @@ export function voiceMeta(voiceId) {
   return OUTBOUND_VOICE_OPTIONS.find((v) => v.id === voiceId) || null;
 }
 
+export const DEFAULT_INTERACTIVE_MENU = {
+  en: {
+    promptSuffix:
+      ' Press 1 if you are interested. Press 2 for a callback. Press 9 to speak with an agent.',
+    responses: {
+      '1': 'Thank you! We have noted that you are interested. Have a wonderful day!',
+      '2': 'Got it. We will call you back soon. Thank you!',
+      '9': 'Please hold while we connect you with an agent. Thank you for calling!',
+      default:
+        'Sorry, I did not catch that. Please press 1 if interested, 2 for a callback, or 9 for an agent.',
+    },
+  },
+  te: {
+    promptSuffix:
+      ' మీరు ఆసక్తి ఉంటే 1 నొక్కండి. కాల్‌బ్యాక్ కావాలంటే 2 నొక్కండి. ఏజెంట్‌తో మాట్లాడాలంటే 9 నొక్కండి.',
+    responses: {
+      '1': 'ధన్యవాదాలు! మీ ఆసక్తిని నమోదు చేసుకున్నాం. మీ రోజు అద్భుతంగా సాగాలి!',
+      '2': 'సరే! మేము త్వరలో మీకు తిరిగి కాల్ చేస్తాము. ధన్యవాదాలు!',
+      '9': 'దయచేసి వేచి ఉండండి, మిమ్మల్ని ఏజెంట్‌కు కలుపుతున్నాం. కాల్ చేసినందుకు ధన్యవాదాలు!',
+      default:
+        'క్షమించండి, అర్థం కాలేదు. ఆసక్తి ఉంటే 1, కాల్‌బ్యాక్ కావాలంటే 2, ఏజెంట్ కావాలంటే 9 నొక్కండి.',
+    },
+  },
+};
+
+export function interactiveLanguageForVoice(voiceId) {
+  return voiceMeta(voiceId)?.language === 'te' ? 'te' : 'en';
+}
+
+export function buildInteractivePromptText(messageText, { interactive, voice }) {
+  const text = String(messageText ?? '').trim();
+  if (!interactive) return text;
+  const lang = interactiveLanguageForVoice(voice);
+  const suffix = DEFAULT_INTERACTIVE_MENU[lang].promptSuffix;
+  if (text.includes(suffix.trim())) return text;
+  return `${text}${suffix}`.slice(0, 500);
+}
+
+export function normalizeInteractiveMenu({ interactive, voice, menu } = {}) {
+  if (interactive !== true) {
+    return { ok: true, interactive: false, menu: null };
+  }
+  const lang = interactiveLanguageForVoice(voice);
+  const defaults = DEFAULT_INTERACTIVE_MENU[lang];
+  const incoming = menu && typeof menu === 'object' ? menu : {};
+  const responses = {
+    '1': String(incoming['1'] ?? defaults.responses['1']).trim().slice(0, 500),
+    '2': String(incoming['2'] ?? defaults.responses['2']).trim().slice(0, 500),
+    '9': String(incoming['9'] ?? defaults.responses['9']).trim().slice(0, 500),
+    default: String(incoming.default ?? defaults.responses.default)
+      .trim()
+      .slice(0, 500),
+  };
+  for (const [digit, text] of Object.entries(responses)) {
+    if (!text) {
+      return {
+        ok: false,
+        interactive: false,
+        menu: null,
+        error: `Interactive response for ${digit} is required`,
+        code: 'interactive_response_required',
+      };
+    }
+  }
+  return {
+    ok: true,
+    interactive: true,
+    language: lang,
+    promptSuffix: defaults.promptSuffix,
+    menu: responses,
+  };
+}
+
 export function normalizeOutboundMessage(raw) {
   const text = String(raw ?? '').trim();
   if (!text) {

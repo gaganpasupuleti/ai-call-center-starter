@@ -52,11 +52,31 @@ export class OutboundPromptStore {
     durationSeconds,
     voice,
     provider,
+    interactive = false,
+    menu = null,
+    responses = null,
   }) {
     const appCallId = `ob-${randomUUID().replace(/-/g, '').slice(0, 16)}`;
     const expiresAt = new Date(Date.now() + this.ttlMs).toISOString();
     const audioPath = this.#pathFor(appCallId);
     writeFileSync(audioPath, mulawBytes);
+    const responseMeta = {};
+    if (responses && typeof responses === 'object') {
+      for (const [digit, entry] of Object.entries(responses)) {
+        if (!entry?.bytes?.length) continue;
+        const responsePath = path.join(
+          this.directory,
+          `${String(appCallId).replace(/[^a-zA-Z0-9_-]/g, '')}-r${digit}.ulaw`,
+        );
+        writeFileSync(responsePath, entry.bytes);
+        responseMeta[digit] = {
+          text: entry.text ?? null,
+          durationSeconds: entry.durationSeconds ?? null,
+          audioPath: responsePath,
+          byteLength: entry.bytes.length,
+        };
+      }
+    }
     const record = {
       appCallId,
       phoneMasked: phoneMasked ?? null,
@@ -65,15 +85,27 @@ export class OutboundPromptStore {
       durationSeconds: durationSeconds ?? null,
       voice: voice ?? null,
       provider: provider ?? null,
+      interactive: interactive === true,
+      menu: menu ?? null,
+      responseMeta,
       audioPath,
       createdAt: nowIso(),
       expiresAt,
       consumedAt: null,
     };
     writeFileSync(this.#metaPathFor(appCallId), JSON.stringify(record));
+    const responseBytes = {};
+    if (responses && typeof responses === 'object') {
+      for (const [digit, entry] of Object.entries(responses)) {
+        if (entry?.bytes?.length) {
+          responseBytes[digit] = Buffer.from(entry.bytes);
+        }
+      }
+    }
     memory.set(appCallId, {
       ...record,
       bytes: Buffer.from(mulawBytes),
+      responseBytes,
     });
     return record;
   }
@@ -99,12 +131,36 @@ export class OutboundPromptStore {
         return null;
       }
       const bytes = readFileSync(audioPath);
-      const record = { ...meta, bytes };
+      const responseBytes = {};
+      for (const [digit, entry] of Object.entries(meta.responseMeta || {})) {
+        if (entry?.audioPath && existsSync(entry.audioPath)) {
+          responseBytes[digit] = readFileSync(entry.audioPath);
+        }
+      }
+      const record = { ...meta, bytes, responseBytes };
       memory.set(appCallId, record);
       return record;
     } catch {
       return null;
     }
+  }
+
+  getInteractiveResponse(appCallId, digit) {
+    const prompt = this.get(appCallId);
+    if (!prompt?.interactive) return null;
+    const key = String(digit ?? '').trim();
+    const bytes =
+      prompt.responseBytes?.[key] ||
+      prompt.responseBytes?.default ||
+      null;
+    if (!bytes?.length) return null;
+    const meta = prompt.responseMeta?.[key] || prompt.responseMeta?.default || {};
+    return {
+      digit: key,
+      text: meta.text || null,
+      bytes: Buffer.from(bytes),
+      durationSeconds: meta.durationSeconds ?? Number((bytes.length / 8000).toFixed(3)),
+    };
   }
 
   /**
@@ -125,19 +181,25 @@ export class OutboundPromptStore {
     prompt.consumedAt = nowIso();
     memory.set(appCallId, prompt);
     try {
-      writeFileSync(this.#metaPathFor(appCallId), JSON.stringify({
-        appCallId: prompt.appCallId,
-        phoneMasked: prompt.phoneMasked,
-        messageLength: prompt.messageLength,
-        repeatCount: prompt.repeatCount,
-        durationSeconds: prompt.durationSeconds,
-        voice: prompt.voice,
-        provider: prompt.provider,
-        audioPath: prompt.audioPath,
-        createdAt: prompt.createdAt,
-        expiresAt: prompt.expiresAt,
-        consumedAt: prompt.consumedAt,
-      }));
+      writeFileSync(
+        this.#metaPathFor(appCallId),
+        JSON.stringify({
+          appCallId: prompt.appCallId,
+          phoneMasked: prompt.phoneMasked,
+          messageLength: prompt.messageLength,
+          repeatCount: prompt.repeatCount,
+          durationSeconds: prompt.durationSeconds,
+          voice: prompt.voice,
+          provider: prompt.provider,
+          interactive: prompt.interactive === true,
+          menu: prompt.menu ?? null,
+          responseMeta: prompt.responseMeta ?? {},
+          audioPath: prompt.audioPath,
+          createdAt: prompt.createdAt,
+          expiresAt: prompt.expiresAt,
+          consumedAt: prompt.consumedAt,
+        }),
+      );
     } catch {
       // ignore
     }

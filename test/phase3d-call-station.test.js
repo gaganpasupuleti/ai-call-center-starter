@@ -204,7 +204,7 @@ test('call details timeline ordering and duplicate-event handling', async () => 
     assert.ok(events.includes('websocket_closed'));
     assert.ok(events.includes('final_status_stored'));
     assert.equal(events.filter((e) => e === 'fixed_audio_queued').length, 1);
-    assert.equal(dto.keypadOption, 'Not supported');
+    assert.equal(dto.keypadOption, 'Waiting / none');
 
     const serialized = JSON.stringify(dto);
     assert.equal(serialized.includes(SECRET), false);

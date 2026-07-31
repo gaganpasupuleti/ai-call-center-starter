@@ -5,6 +5,7 @@ export const INBOUND_EVENTS = new Set([
   'start',
   'media',
   'mark',
+  'dtmf',
   'stop',
 ]);
 

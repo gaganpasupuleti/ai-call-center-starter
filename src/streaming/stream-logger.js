@@ -8,6 +8,7 @@ const RECOGNIZED_PROTOCOL_EVENTS = new Set([
   'start',
   'media',
   'mark',
+  'dtmf',
   'clear',
   'hangupCall',
   'transfer',

@@ -1408,6 +1408,10 @@ async function renderOutbound() {
               <input type="hidden" id="outbound-lang" value="en" />
             </div>
             <label class="admin-confirm">
+              <input type="checkbox" id="outbound-interactive" />
+              <span>Interactive keypad — listen for 1 / 2 / 9 after the message</span>
+            </label>
+            <label class="admin-confirm">
               <input type="checkbox" id="outbound-confirm" ${gatesOpen ? '' : 'disabled'} />
               <span>Confirm one live call to this number</span>
             </label>
@@ -1442,6 +1446,7 @@ async function renderOutbound() {
   const voiceInput = $('#outbound-voice');
   const langInput = $('#outbound-lang');
   const confirmInput = $('#outbound-confirm');
+  const interactiveInput = $('#outbound-interactive');
   const callBtn = $('#outbound-call');
   const resultHost = $('#outbound-result');
   const messageHint = $('#outbound-message-hint');
@@ -1747,6 +1752,7 @@ async function renderOutbound() {
           message: messageInput.value,
           repeatCount: Number(repeatInput.value || 1),
           voice: selectedVoice(),
+          interactive: interactiveInput?.checked === true,
           confirm: true,
         }),
       });
@@ -1759,6 +1765,7 @@ async function renderOutbound() {
       showResult('Call result', [
         `Destination ${result.phoneMasked || '—'}`,
         `Voice ${result.audio?.voice || selectedVoice()}`,
+        `Interactive ${result.interactive ? 'yes (1/2/9)' : 'no'}`,
         `App call id ${result.appCallId || '—'}`,
         `Call Station ref ${result.stationRef || '—'}`,
         `Network request: ${result.networkRequestMade ? 'yes' : 'no'}`,

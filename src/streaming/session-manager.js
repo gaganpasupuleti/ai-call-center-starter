@@ -101,6 +101,8 @@ export class StreamSessionManager {
         return this.#onMedia(session, event);
       case 'mark':
         return this.#onMark(session, event);
+      case 'dtmf':
+        return this.#onDtmf(session, event);
       case 'stop':
         return this.#onStop(session, event);
       default:
@@ -276,6 +278,15 @@ export class StreamSessionManager {
         );
         session.metadata.audioQueuedAt = nowIso();
         this.promptStore.markConsumed(appCallId);
+        if (built.prompt.interactive === true) {
+          session.metadata.interactive = true;
+          session.metadata.interactiveAppCallId = appCallId;
+          session.metadata.keypadCaptured = false;
+          this.callStation?.recordTimeline?.(session, {
+            event: 'interactive_listening',
+            detail: 'awaiting_dtmf',
+          });
+        }
         this.callStation?.recordTimeline?.(session, {
           event: 'custom_audio_queued',
           detail: `repeat=${built.prompt.repeatCount}`,
@@ -392,6 +403,55 @@ export class StreamSessionManager {
     }
 
     return { ok: true, result };
+  }
+
+  #onDtmf(session, event) {
+    const digit = event.digit ? String(event.digit) : null;
+    this.#persistEvent(session, event);
+    this.callStation?.onProtocolEvent?.(session, 'dtmf', { digit });
+
+    if (!digit) {
+      return { ok: false, reason: 'missing_digit' };
+    }
+
+    if (session.metadata.keypadCaptured === true) {
+      return { ok: true, ignored: true, reason: 'already_captured', digit };
+    }
+
+    const appCallId =
+      session.metadata.interactiveAppCallId ||
+      session.appCallId ||
+      session.customParameters?.app_call_id;
+    const response = this.promptStore?.getInteractiveResponse?.(appCallId, digit);
+    session.metadata.keypadCaptured = true;
+    session.metadata.selectedDigit = digit;
+    this.callStation?.noteKeypadDigit?.(session, {
+      digit,
+      label: response?.text || null,
+    });
+
+    if (!response?.bytes?.length) {
+      this.callStation?.recordTimeline?.(session, {
+        event: 'dtmf_no_response_audio',
+        detail: digit,
+      });
+      return { ok: true, digit, played: false };
+    }
+
+    this.clearAudio(session);
+    const chunks = this.sendMedia(session, response.bytes);
+    this.sendMark(session, `keypad-${digit}`);
+    this.callStation?.recordTimeline?.(session, {
+      event: 'keypad_response_queued',
+      detail: `digit=${digit};chunks=${chunks}`,
+    });
+    return {
+      ok: true,
+      digit,
+      played: true,
+      enqueuedChunks: chunks,
+      durationSeconds: response.durationSeconds,
+    };
   }
 
   #onMark(session, event) {

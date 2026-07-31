@@ -120,6 +120,26 @@ export function normalizeInboundEvent(payload) {
     };
   }
 
+  if (event === 'dtmf') {
+    const dtmf = payload.dtmf ?? {};
+    const streamSid = payload.streamSid ?? dtmf.streamSid;
+    if (!streamSid) {
+      throw new ProtocolError('Missing streamSid', 'missing_stream_sid');
+    }
+    const digitRaw = dtmf.digit ?? payload.digit ?? null;
+    const digit =
+      digitRaw === null || digitRaw === undefined
+        ? null
+        : String(digitRaw).trim().slice(0, 1);
+    return {
+      event,
+      sequenceNumber,
+      streamSid: String(streamSid),
+      digit,
+      raw: payload,
+    };
+  }
+
   if (event === 'stop') {
     const stop = payload.stop ?? {};
     const streamSid = payload.streamSid ?? stop.streamSid;

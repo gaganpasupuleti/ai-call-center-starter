@@ -183,7 +183,14 @@ export function toStationCallDto(row) {
           : 'received'
         : 'missing',
     },
-    keypadOption: 'Not supported',
+    keypadOption:
+      row.metadata?.selectedDigit != null
+        ? `Key ${row.metadata.selectedDigit}${
+            row.metadata?.keypadLabel
+              ? ` · ${String(row.metadata.keypadLabel).slice(0, 48)}`
+              : ''
+          }`
+        : 'Waiting / none',
     failureReason: row.failure_category ?? null,
     timeline: timeline.map((item) => ({
       ts: item.ts ?? null,

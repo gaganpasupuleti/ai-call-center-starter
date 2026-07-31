@@ -160,7 +160,7 @@ export class CallStationTracker {
     });
   }
 
-  onProtocolEvent(session, eventName) {
+  onProtocolEvent(session, eventName, extras = {}) {
     const row = this.#findBySession(session);
     if (!row) return null;
     if (eventName === 'start') return row;
@@ -168,8 +168,12 @@ export class CallStationTracker {
     protocol[eventName] = (protocol[eventName] || 0) + 1;
     // Avoid flooding timeline with every media frame.
     let timeline = row.timeline;
+    const detail =
+      extras?.digit != null
+        ? `digit=${extras.digit}`
+        : extras?.detail || null;
     if (eventName !== 'media') {
-      timeline = pushTimeline(row, eventName);
+      timeline = pushTimeline(row, eventName, detail);
     } else if (!row.timeline?.some((item) => item.event === 'inbound_media')) {
       timeline = pushTimeline(row, 'inbound_media', 'first');
     }
@@ -184,6 +188,21 @@ export class CallStationTracker {
       patch.timeline = timeline;
     }
     return this.repository.updateStreamTestCall(row.id, patch);
+  }
+
+  noteKeypadDigit(session, { digit, label } = {}) {
+    const row = this.#findBySession(session);
+    if (!row) return null;
+    const selectedDigit = digit != null ? String(digit) : null;
+    return this.repository.updateStreamTestCall(row.id, {
+      metadata: {
+        ...(row.metadata || {}),
+        selectedDigit,
+        keypadLabel: label || null,
+        keypadAt: nowIso(),
+      },
+      timeline: pushTimeline(row, 'keypad_digit', selectedDigit),
+    });
   }
 
   recordTimeline(session, { event, detail }) {
