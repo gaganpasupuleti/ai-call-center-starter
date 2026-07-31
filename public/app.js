@@ -1466,8 +1466,10 @@ async function renderOutbound() {
       hint: 'Type in తెలుగు script — English letters sound English',
     },
   ];
-  const TELUGU_SAMPLE = 'నమస్కారం! మీరు ఎలా ఉన్నారు?';
-  const ENGLISH_SAMPLE = 'Hi, hello! How are you doing today?';
+  const TELUGU_SAMPLE =
+    'నమస్కారం! మీరు ఎలా ఉన్నారు? ఈరోజు మీ రోజు చాలా బాగా సాగుతుందని ఆశిస్తున్నాను!';
+  const ENGLISH_SAMPLE =
+    'Hi hello! How are you doing today? Hope you are having a wonderful day!';
 
   function looksLikeEnglishOnly(text) {
     const value = String(text || '').trim();

@@ -24,9 +24,10 @@ const DEFAULT_CACHE_DIR = path.resolve(
   'tts-cache',
 );
 
-const CACHE_VERSION = 'v4';
+const CACHE_VERSION = 'v5';
 const ALLOWED_VOICES = new Set(OUTBOUND_VOICE_OPTIONS.map((v) => v.id));
 const TELUGU_SCRIPT_RE = /[\u0C00-\u0C7F]/;
+const VOICE_META = new Map(OUTBOUND_VOICE_OPTIONS.map((v) => [v.id, v]));
 
 export class TtsError extends Error {
   constructor(message, code = 'tts_error', statusCode = 500) {
@@ -77,25 +78,52 @@ export function teluguVoiceNeedsTeluguScript(voice, text) {
   return !textHasTeluguScript(text);
 }
 
-function prosodyForLocale(locale) {
-  // Telugu neural voices read clearer a bit slower + louder on μ-law phones.
+/**
+ * Bright, energetic delivery for phone playback (not slow/dull).
+ * Edge TTS Indian voices do not support mstts:express-as / contour reliably.
+ */
+function prosodyForVoice(voice, locale) {
+  const gender = VOICE_META.get(voice)?.gender || 'female';
   if (locale === 'te-IN') {
-    return { pitch: '+0Hz', rate: '-18%', volume: '+20%' };
+    return gender === 'male'
+      ? { pitch: '+6Hz', rate: '+8%', volume: '+40%' }
+      : { pitch: '+12Hz', rate: '+10%', volume: '+40%' };
   }
-  return { pitch: '+0Hz', rate: '+0%', volume: '+5%' };
+  return gender === 'male'
+    ? { pitch: '+5Hz', rate: '+10%', volume: '+30%' }
+    : { pitch: '+10Hz', rate: '+12%', volume: '+30%' };
 }
 
-function runFfmpegToPcm(inputPath, { boostDb = 0 } = {}) {
+function buildLivelySsml(text, voice, locale) {
+  const body = escapeXml(text);
+  const prosody = prosodyForVoice(voice, locale);
+  return (
+    `<speak version="1.0" xmlns="http://www.w3.org/2001/10/synthesis" ` +
+    `xmlns:mstts="https://www.w3.org/2001/mstts" xml:lang="${locale}">` +
+    `<voice name="${voice}">` +
+    `<prosody pitch="${prosody.pitch}" rate="${prosody.rate}" volume="${prosody.volume}">` +
+    `${body}</prosody></voice></speak>`
+  );
+}
+
+function runFfmpegToPcm(inputPath, { boostDb = 0, brighten = true } = {}) {
   return new Promise((resolve, reject) => {
     if (!ffmpegPath || !existsSync(ffmpegPath)) {
       reject(new TtsError('ffmpeg binary is unavailable', 'tts_ffmpeg_missing'));
       return;
     }
     const args = ['-y', '-i', inputPath, '-ac', '1', '-ar', '8000'];
-    // Soft high-pass + optional gain for Telugu clarity on 8 kHz telephony.
-    const filters = ['highpass=f=120'];
+    // Presence boost + mild compression so μ-law phone audio feels lively, not muffled.
+    const filters = ['highpass=f=100'];
+    if (brighten) {
+      filters.push('equalizer=f=2200:t=q:w=1.1:g=4');
+      filters.push('equalizer=f=4500:t=q:w=1.0:g=2.5');
+    }
     if (boostDb > 0) filters.push(`volume=${boostDb}dB`);
-    filters.push('alimiter=limit=0.95:level=false');
+    filters.push(
+      'acompressor=threshold=-18dB:ratio=2.5:attack=8:release=80:makeup=3dB',
+    );
+    filters.push('alimiter=limit=0.96:level=false');
     args.push('-af', filters.join(','));
     args.push('-f', 's16le', 'pipe:1');
     const child = spawn(ffmpegPath, args, {
@@ -286,11 +314,18 @@ export async function synthesizeToMulaw(
       );
     }
 
-    const { audioFilePath } = await tts.toFile(
-      workDir,
-      escapeXml(trimmed),
-      prosodyForLocale(expectedLocale),
-    );
+    const ssml = buildLivelySsml(trimmed, requestedVoice, expectedLocale);
+    let audioFilePath;
+    try {
+      ({ audioFilePath } = await tts.rawToFile(workDir, ssml));
+    } catch {
+      // Fallback to library template with the same lively prosody.
+      ({ audioFilePath } = await tts.toFile(
+        workDir,
+        escapeXml(trimmed),
+        prosodyForVoice(requestedVoice, expectedLocale),
+      ));
+    }
     try {
       tts.close();
     } catch {
@@ -303,7 +338,8 @@ export async function synthesizeToMulaw(
 
     // Delay cleanup slightly so msedge-tts finish handlers can exit cleanly.
     const pcm = await runFfmpegToPcm(audioFilePath, {
-      boostDb: expectedLocale === 'te-IN' ? 4 : 2,
+      boostDb: expectedLocale === 'te-IN' ? 5 : 3,
+      brighten: true,
     });
     const encoded = pcm16leMonoToMulaw(pcm);
     writeFileSync(cachedPath, encoded.bytes);
@@ -328,6 +364,7 @@ export async function synthesizeToMulaw(
       hasTeluguScript: textHasTeluguScript(trimmed),
       cached: false,
       cacheKey: key,
+      delivery: 'lively',
     };
   } catch (error) {
     setTimeout(() => {
