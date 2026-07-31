@@ -191,6 +191,7 @@ export function toStationCallDto(row) {
               : ''
           }`
         : 'Waiting / none',
+    keypadSpokenPreview: row.metadata?.keypadSpokenPreview ?? null,
     failureReason: row.failure_category ?? null,
     timeline: timeline.map((item) => ({
       ts: item.ts ?? null,

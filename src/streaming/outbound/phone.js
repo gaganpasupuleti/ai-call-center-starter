@@ -131,6 +131,19 @@ export const DEFAULT_INTERACTIVE_MENU = {
   },
 };
 
+/** Call Station / admin notes stay English even for Telugu speech. */
+export const INTERACTIVE_DIGIT_LABELS_EN = {
+  '1': 'Interested',
+  '2': 'Callback requested',
+  '9': 'Agent requested',
+  default: 'Unrecognized key',
+};
+
+export function englishLabelForDigit(digit) {
+  const key = String(digit ?? '').trim();
+  return INTERACTIVE_DIGIT_LABELS_EN[key] || INTERACTIVE_DIGIT_LABELS_EN.default;
+}
+
 export function interactiveLanguageForVoice(voiceId) {
   return voiceMeta(voiceId)?.language === 'te' ? 'te' : 'en';
 }
@@ -146,7 +159,7 @@ export function buildInteractivePromptText(messageText, { interactive, voice }) 
 
 export function normalizeInteractiveMenu({ interactive, voice, menu } = {}) {
   if (interactive !== true) {
-    return { ok: true, interactive: false, menu: null };
+    return { ok: true, interactive: false, menu: null, labelsEn: null };
   }
   const lang = interactiveLanguageForVoice(voice);
   const defaults = DEFAULT_INTERACTIVE_MENU[lang];
@@ -165,6 +178,7 @@ export function normalizeInteractiveMenu({ interactive, voice, menu } = {}) {
         ok: false,
         interactive: false,
         menu: null,
+        labelsEn: null,
         error: `Interactive response for ${digit} is required`,
         code: 'interactive_response_required',
       };
@@ -176,6 +190,7 @@ export function normalizeInteractiveMenu({ interactive, voice, menu } = {}) {
     language: lang,
     promptSuffix: defaults.promptSuffix,
     menu: responses,
+    labelsEn: { ...INTERACTIVE_DIGIT_LABELS_EN },
   };
 }
 

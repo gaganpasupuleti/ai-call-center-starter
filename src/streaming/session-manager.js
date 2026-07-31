@@ -15,6 +15,9 @@ import {
   isFixedWelcomeMode,
 } from './fixed-audio.js';
 import { getOutboundPromptStore } from './outbound/prompt-store.js';
+import { englishLabelForDigit } from './outbound/phone.js';
+
+const MESSAGE_END_HANGUP_MS = 10_000;
 
 function nowIso() {
   return new Date().toISOString();
@@ -164,6 +167,10 @@ export class StreamSessionManager {
 
   closeSession(session, reason = 'closed') {
     if (!session || session.state === STREAM_STATES.closed) return;
+    if (session.failsafeHangupTimer) {
+      clearTimeout(session.failsafeHangupTimer);
+      session.failsafeHangupTimer = null;
+    }
     session.queue?.stop();
     session.state = STREAM_STATES.closed;
     session.closedAt = nowIso();
@@ -221,6 +228,10 @@ export class StreamSessionManager {
                 event: 'custom_audio_completed',
                 detail: null,
               });
+            }
+            // Failsafe: cut the call 10s after the primary message finishes.
+            if (!session.metadata.failsafeHangupScheduled) {
+              this.#scheduleFailsafeHangup(session, MESSAGE_END_HANGUP_MS, 'message_ended');
             }
           }
         },
@@ -425,17 +436,19 @@ export class StreamSessionManager {
     const response = this.promptStore?.getInteractiveResponse?.(appCallId, digit);
     session.metadata.keypadCaptured = true;
     session.metadata.selectedDigit = digit;
+    const labelEn = englishLabelForDigit(digit);
     this.callStation?.noteKeypadDigit?.(session, {
       digit,
-      label: response?.text || null,
+      label: labelEn,
+      spokenPreview: response?.text || null,
     });
 
     if (!response?.bytes?.length) {
       this.callStation?.recordTimeline?.(session, {
         event: 'dtmf_no_response_audio',
-        detail: digit,
+        detail: `digit=${digit};${labelEn}`,
       });
-      return { ok: true, digit, played: false };
+      return { ok: true, digit, played: false, label: labelEn };
     }
 
     this.clearAudio(session);
@@ -443,15 +456,58 @@ export class StreamSessionManager {
     this.sendMark(session, `keypad-${digit}`);
     this.callStation?.recordTimeline?.(session, {
       event: 'keypad_response_queued',
-      detail: `digit=${digit};chunks=${chunks}`,
+      detail: `digit=${digit};${labelEn};chunks=${chunks}`,
     });
+    // Keep failsafe: hang up shortly after keypad reply finishes (+10s grace).
+    const replyMs = Math.max(
+      2_000,
+      Math.round((response.durationSeconds || 2) * 1000),
+    );
+    this.#scheduleFailsafeHangup(session, replyMs + MESSAGE_END_HANGUP_MS, 'keypad_reply');
     return {
       ok: true,
       digit,
       played: true,
+      label: labelEn,
       enqueuedChunks: chunks,
       durationSeconds: response.durationSeconds,
     };
+  }
+
+  #scheduleFailsafeHangup(session, delayMs, reason = 'failsafe') {
+    if (!session) return;
+    if (session.failsafeHangupTimer) {
+      clearTimeout(session.failsafeHangupTimer);
+      session.failsafeHangupTimer = null;
+    }
+    session.metadata.failsafeHangupScheduled = true;
+    session.metadata.failsafeHangupReason = reason;
+    session.metadata.failsafeHangupAt = new Date(
+      Date.now() + Math.max(0, delayMs),
+    ).toISOString();
+    this.callStation?.recordTimeline?.(session, {
+      event: 'failsafe_hangup_scheduled',
+      detail: `${reason};${Math.round(delayMs / 1000)}s`,
+    });
+    session.failsafeHangupTimer = setTimeout(() => {
+      session.failsafeHangupTimer = null;
+      if (session.state === STREAM_STATES.closed) return;
+      this.callStation?.recordTimeline?.(session, {
+        event: 'failsafe_hangup',
+        detail: reason,
+      });
+      try {
+        this.hangupCall(session);
+      } catch {
+        // ignore
+      }
+      // Give provider a moment, then close local session if still open.
+      setTimeout(() => {
+        if (session.state !== STREAM_STATES.closed) {
+          this.closeSession(session, `failsafe_hangup_${reason}`);
+        }
+      }, 1500);
+    }, Math.max(0, delayMs));
   }
 
   #onMark(session, event) {

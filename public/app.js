@@ -1086,7 +1086,7 @@ async function showStationCallDetails(id) {
         <div><span>WebSocket</span><br>${escapeHtml(call.websocket?.result ?? 'unknown')} ${call.websocket?.closeCode != null ? `(${escapeHtml(call.websocket.closeCode)})` : ''}</div>
         <div><span>Webhook</span><br>${escapeHtml(call.webhook?.result ?? 'missing')}${call.webhook?.status ? ` · ${escapeHtml(call.webhook.status)}` : ''}</div>
         <div><span>Audio</span><br>${escapeHtml(call.audio?.status ?? 'Unknown')}</div>
-        <div><span>Keypad</span><br>${escapeHtml(call.keypadOption ?? 'Not supported')}</div>
+        <div><span>Keypad</span><br>${escapeHtml(call.keypadOption ?? 'Waiting / none')}</div>
       </div>
       <h4>Event timeline</h4>
       <div class="timeline">

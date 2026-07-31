@@ -190,18 +190,28 @@ export class CallStationTracker {
     return this.repository.updateStreamTestCall(row.id, patch);
   }
 
-  noteKeypadDigit(session, { digit, label } = {}) {
+  noteKeypadDigit(session, { digit, label, spokenPreview } = {}) {
     const row = this.#findBySession(session);
     if (!row) return null;
     const selectedDigit = digit != null ? String(digit) : null;
+    const labelEn = label || null;
     return this.repository.updateStreamTestCall(row.id, {
       metadata: {
         ...(row.metadata || {}),
         selectedDigit,
-        keypadLabel: label || null,
+        keypadLabel: labelEn,
+        keypadSpokenPreview: spokenPreview
+          ? String(spokenPreview).slice(0, 80)
+          : null,
         keypadAt: nowIso(),
       },
-      timeline: pushTimeline(row, 'keypad_digit', selectedDigit),
+      timeline: pushTimeline(
+        row,
+        'keypad_digit',
+        selectedDigit
+          ? `Key ${selectedDigit}${labelEn ? ` · ${labelEn}` : ''}`
+          : null,
+      ),
     });
   }
 
