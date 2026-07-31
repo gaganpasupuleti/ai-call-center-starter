@@ -19,7 +19,7 @@ export const OUTBOUND_VOICE_OPTIONS = [
   },
   {
     id: 'te-IN-ShrutiNeural',
-    label: 'కావ్య',
+    label: 'ప్రియ',
     description: 'Female',
     language: 'te',
     languageLabel: 'Telugu',
