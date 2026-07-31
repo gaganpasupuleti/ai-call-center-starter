@@ -18,7 +18,7 @@ export function sanitizeCallRef(id) {
 }
 
 export function normalizeStationStatus(value) {
-  const raw = String(value ?? 'unknown').trim().toLowerCase();
+  const raw = String(value ?? 'unknown').trim().toLowerCase().replace(/[-\s]+/g, '_');
   const map = {
     requested: 'Requested',
     initiated: 'Initiated',
@@ -28,9 +28,58 @@ export function normalizeStationStatus(value) {
     completed: 'Completed',
     failed: 'Failed',
     rejected: 'Rejected',
+    busy: 'Busy',
+    no_answer: 'No answer',
+    noanswer: 'No answer',
+    missed: 'No answer',
+    cancelled: 'Cancelled',
+    canceled: 'Cancelled',
     unknown: 'Unknown',
   };
   return map[raw] || 'Unknown';
+}
+
+/**
+ * Human-facing pickup outcome for Call Station / Dashboard panels.
+ */
+export function derivePickupState(row) {
+  const status = String(row?.status ?? '')
+    .trim()
+    .toLowerCase()
+    .replace(/[-\s]+/g, '_');
+  const webhook = String(row?.webhook_status ?? '')
+    .trim()
+    .toLowerCase()
+    .replace(/[-\s]+/g, '_');
+  const combined = `${status} ${webhook}`;
+
+  if (
+    row?.answered_at ||
+    ['answered', 'streaming', 'completed'].includes(status) ||
+    ((row?.ws_accepted === 1 || row?.ws_accepted === true) &&
+      (row?.streaming_at || row?.audio_status === 'playing' || row?.audio_status === 'completed'))
+  ) {
+    return { code: 'picked_up', label: 'Picked up' };
+  }
+
+  if (
+    ['no_answer', 'noanswer', 'busy', 'failed', 'rejected', 'missed', 'cancelled', 'canceled'].includes(
+      status,
+    ) ||
+    /no_answer|noanswer|busy|missed|rejected|failed|cancel/.test(combined)
+  ) {
+    return { code: 'not_picked_up', label: 'Not picked up' };
+  }
+
+  if (status === 'ringing' || webhook === 'ringing') {
+    return { code: 'ringing', label: 'Ringing' };
+  }
+
+  if (['initiated', 'requested'].includes(status)) {
+    return { code: 'dialing', label: 'Dialing' };
+  }
+
+  return { code: 'unknown', label: 'Unknown' };
 }
 
 export function calculateDurationSeconds(startIso, endIso) {
@@ -81,6 +130,7 @@ export function toStationCallDto(row) {
       ? row.protocol_events
       : {};
   const timeline = Array.isArray(row.timeline) ? row.timeline : [];
+  const pickup = derivePickupState(row);
   return stripSensitive({
     id: row.public_ref || sanitizeCallRef(row.id),
     internalId: sanitizeCallRef(row.id),
@@ -90,6 +140,9 @@ export function toStationCallDto(row) {
     destinationMasked: row.destination_masked ?? null,
     didMasked: row.did_masked ?? null,
     status: normalizeStationStatus(row.status),
+    pickup: pickup.label,
+    pickupCode: pickup.code,
+    pickedUp: pickup.code === 'picked_up',
     requestedAt: row.requested_at ?? null,
     initiatedAt: row.initiated_at ?? null,
     ringingAt: row.ringing_at ?? null,

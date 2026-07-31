@@ -24,7 +24,7 @@ const DEFAULT_CACHE_DIR = path.resolve(
   'tts-cache',
 );
 
-const CACHE_VERSION = 'v3';
+const CACHE_VERSION = 'v4';
 const ALLOWED_VOICES = new Set(OUTBOUND_VOICE_OPTIONS.map((v) => v.id));
 const TELUGU_SCRIPT_RE = /[\u0C00-\u0C7F]/;
 
@@ -77,36 +77,27 @@ export function teluguVoiceNeedsTeluguScript(voice, text) {
   return !textHasTeluguScript(text);
 }
 
-function buildSsml(text, voice, locale) {
-  const body = escapeXml(text);
-  // Match msedge-tts default template + explicit xml:lang so Telugu voices stay on te-IN.
-  return (
-    `<speak version="1.0" xmlns="http://www.w3.org/2001/10/synthesis" ` +
-    `xmlns:mstts="https://www.w3.org/2001/mstts" xml:lang="${locale}">` +
-    `<voice name="${voice}">` +
-    `<prosody pitch="+0Hz" rate="+0%" volume="+0%">${body}</prosody>` +
-    `</voice></speak>`
-  );
+function prosodyForLocale(locale) {
+  // Telugu neural voices read clearer a bit slower + louder on μ-law phones.
+  if (locale === 'te-IN') {
+    return { pitch: '+0Hz', rate: '-18%', volume: '+20%' };
+  }
+  return { pitch: '+0Hz', rate: '+0%', volume: '+5%' };
 }
 
-function runFfmpegToPcm(inputPath) {
+function runFfmpegToPcm(inputPath, { boostDb = 0 } = {}) {
   return new Promise((resolve, reject) => {
     if (!ffmpegPath || !existsSync(ffmpegPath)) {
       reject(new TtsError('ffmpeg binary is unavailable', 'tts_ffmpeg_missing'));
       return;
     }
-    const args = [
-      '-y',
-      '-i',
-      inputPath,
-      '-ac',
-      '1',
-      '-ar',
-      '8000',
-      '-f',
-      's16le',
-      'pipe:1',
-    ];
+    const args = ['-y', '-i', inputPath, '-ac', '1', '-ar', '8000'];
+    // Soft high-pass + optional gain for Telugu clarity on 8 kHz telephony.
+    const filters = ['highpass=f=120'];
+    if (boostDb > 0) filters.push(`volume=${boostDb}dB`);
+    filters.push('alimiter=limit=0.95:level=false');
+    args.push('-af', filters.join(','));
+    args.push('-f', 's16le', 'pipe:1');
     const child = spawn(ffmpegPath, args, {
       stdio: ['ignore', 'pipe', 'pipe'],
       windowsHide: true,
@@ -281,7 +272,7 @@ export async function synthesizeToMulaw(
     const tts = new MsEdgeTTS();
     await tts.setMetadata(
       requestedVoice,
-      OUTPUT_FORMAT.AUDIO_24KHZ_48KBITRATE_MONO_MP3,
+      OUTPUT_FORMAT.AUDIO_24KHZ_96KBITRATE_MONO_MP3,
       { voiceLocale: expectedLocale },
     );
 
@@ -295,8 +286,11 @@ export async function synthesizeToMulaw(
       );
     }
 
-    const ssml = buildSsml(trimmed, requestedVoice, expectedLocale);
-    const { audioFilePath } = await tts.rawToFile(workDir, ssml);
+    const { audioFilePath } = await tts.toFile(
+      workDir,
+      escapeXml(trimmed),
+      prosodyForLocale(expectedLocale),
+    );
     try {
       tts.close();
     } catch {
@@ -307,16 +301,21 @@ export async function synthesizeToMulaw(
       throw new TtsError('Edge TTS did not produce an audio file', 'tts_edge_empty');
     }
 
-    const pcm = await runFfmpegToPcm(audioFilePath);
+    // Delay cleanup slightly so msedge-tts finish handlers can exit cleanly.
+    const pcm = await runFfmpegToPcm(audioFilePath, {
+      boostDb: expectedLocale === 'te-IN' ? 4 : 2,
+    });
     const encoded = pcm16leMonoToMulaw(pcm);
     writeFileSync(cachedPath, encoded.bytes);
     writeCacheMeta(metaPath, requestedVoice, key);
 
-    try {
-      rmSync(workDir, { recursive: true, force: true });
-    } catch {
-      // ignore cleanup
-    }
+    setTimeout(() => {
+      try {
+        rmSync(workDir, { recursive: true, force: true });
+      } catch {
+        // ignore cleanup
+      }
+    }, 250);
 
     return {
       ...encoded,
@@ -331,11 +330,13 @@ export async function synthesizeToMulaw(
       cacheKey: key,
     };
   } catch (error) {
-    try {
-      rmSync(workDir, { recursive: true, force: true });
-    } catch {
-      // ignore
-    }
+    setTimeout(() => {
+      try {
+        rmSync(workDir, { recursive: true, force: true });
+      } catch {
+        // ignore
+      }
+    }, 250);
     if (error instanceof TtsError) throw error;
     throw new TtsError(
       error?.message || 'TTS synthesis failed',

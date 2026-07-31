@@ -261,35 +261,88 @@ export class CallStationTracker {
         streamSid: callRef,
       }) || null;
 
+    const rawStatus = String(status || 'unknown')
+      .trim()
+      .toLowerCase()
+      .replace(/[-\s]+/g, '_');
+    const mappedStatus =
+      {
+        answered: 'answered',
+        connected: 'answered',
+        inprogress: 'answered',
+        in_progress: 'answered',
+        streaming: 'streaming',
+        completed: 'completed',
+        complete: 'completed',
+        ended: 'completed',
+        ringing: 'ringing',
+        initiated: 'initiated',
+        no_answer: 'no_answer',
+        noanswer: 'no_answer',
+        unanswered: 'no_answer',
+        missed: 'no_answer',
+        busy: 'busy',
+        failed: 'failed',
+        failure: 'failed',
+        rejected: 'rejected',
+        cancel: 'cancelled',
+        cancelled: 'cancelled',
+        canceled: 'cancelled',
+      }[rawStatus] || rawStatus;
+
+    const patchBase = {
+      webhookReceivedAt: nowIso(),
+      webhookDuplicate: Boolean(duplicate),
+      webhookStatus: mappedStatus || status || null,
+    };
+
+    if (['answered', 'streaming', 'completed'].includes(mappedStatus)) {
+      patchBase.status = mappedStatus === 'completed' ? 'completed' : mappedStatus;
+      patchBase.answeredAt = row?.answered_at || nowIso();
+      if (mappedStatus === 'completed') {
+        patchBase.endedAt = row?.ended_at || nowIso();
+      }
+    } else if (
+      ['no_answer', 'busy', 'failed', 'rejected', 'cancelled'].includes(mappedStatus)
+    ) {
+      patchBase.status = mappedStatus;
+      patchBase.endedAt = row?.ended_at || nowIso();
+      if (['no_answer', 'busy', 'rejected', 'failed'].includes(mappedStatus)) {
+        patchBase.failureCategory = mappedStatus;
+      }
+    } else if (mappedStatus) {
+      patchBase.status = mappedStatus;
+    }
+
     const target =
       row ||
       this.repository.createStreamTestCall({
         publicRef: `TC-WH-${sanitizeCallRef(eventKey || callRef || Date.now())}`,
-        status: status || 'unknown',
+        status: patchBase.status || mappedStatus || 'unknown',
         providerCallId: callRef || null,
         callSid: callRef || null,
-        webhookReceivedAt: nowIso(),
+        answeredAt: patchBase.answeredAt || null,
+        endedAt: patchBase.endedAt || null,
+        failureCategory: patchBase.failureCategory || null,
+        webhookReceivedAt: patchBase.webhookReceivedAt,
         webhookDuplicate: Boolean(duplicate),
-        webhookStatus: status || null,
+        webhookStatus: patchBase.webhookStatus,
         timeline: [
           {
             ts: nowIso(),
             event: duplicate ? 'webhook_duplicate' : 'webhook_received',
-            detail: status || null,
+            detail: mappedStatus || status || null,
           },
         ],
       });
 
     if (row) {
       return this.repository.updateStreamTestCall(row.id, {
-        webhookReceivedAt: nowIso(),
-        webhookDuplicate: Boolean(duplicate),
-        webhookStatus: status || row.webhook_status,
-        status: status ? String(status).toLowerCase() : row.status,
+        ...patchBase,
         timeline: pushTimeline(
           row,
           duplicate ? 'webhook_duplicate' : 'webhook_received',
-          status || null,
+          mappedStatus || status || null,
         ),
       });
     }

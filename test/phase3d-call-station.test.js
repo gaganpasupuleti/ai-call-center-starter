@@ -9,6 +9,7 @@ import { StreamSessionManager } from '../src/streaming/session-manager.js';
 import { CallStationTracker } from '../src/streaming/call-station-tracker.js';
 import {
   calculateDurationSeconds,
+  derivePickupState,
   maskPhone,
   normalizeStationStatus,
   sanitizeCallRef,
@@ -106,8 +107,29 @@ test('duration calculation and status normalization', () => {
   );
   assert.equal(calculateDurationSeconds(null, '2026-07-29T10:00:00.000Z'), null);
   assert.equal(normalizeStationStatus('streaming'), 'Streaming');
+  assert.equal(normalizeStationStatus('no_answer'), 'No answer');
   assert.equal(normalizeStationStatus('nope'), 'Unknown');
   assert.equal(sanitizeCallRef('CA1234567890ABCDEF'), 'CA1234…CDEF');
+});
+
+test('pickup state reflects answered vs missed calls', () => {
+  assert.equal(
+    derivePickupState({ status: 'answered', answered_at: '2026-07-29T10:00:00.000Z' })
+      .code,
+    'picked_up',
+  );
+  assert.equal(derivePickupState({ status: 'no_answer' }).code, 'not_picked_up');
+  assert.equal(derivePickupState({ status: 'busy' }).label, 'Not picked up');
+  assert.equal(derivePickupState({ status: 'ringing' }).code, 'ringing');
+  const dto = toStationCallDto({
+    id: 'x',
+    public_ref: 'TC-1',
+    status: 'completed',
+    answered_at: '2026-07-29T10:00:00.000Z',
+    timeline: [],
+  });
+  assert.equal(dto.pickupCode, 'picked_up');
+  assert.equal(dto.pickedUp, true);
 });
 
 test('empty call history summary and list', async () => {

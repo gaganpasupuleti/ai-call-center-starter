@@ -191,7 +191,7 @@ function renderRecentLiveCallsTable(calls) {
       <table>
         <thead>
           <tr>
-            <th>Ref</th><th>Destination</th><th>Source</th><th>Status</th><th>Note</th><th>When</th><th></th>
+            <th>Ref</th><th>Destination</th><th>Source</th><th>Pickup</th><th>Status</th><th>Note</th><th>When</th><th></th>
           </tr>
         </thead>
         <tbody>
@@ -201,6 +201,7 @@ function renderRecentLiveCallsTable(calls) {
                 <td class="mono">${escapeHtml(call.stationRef || call.id)}</td>
                 <td>${escapeHtml(call.phone || call.lead_name || '—')}</td>
                 <td>${escapeHtml(call.campaign_name || '—')}</td>
+                <td>${pickupBadge(call)}</td>
                 <td>${badge(call.status)}</td>
                 <td>${escapeHtml(call.interpreted_response || '—')}</td>
                 <td>${escapeHtml(formatDate(call.started_at || call.created_at))}</td>
@@ -928,10 +929,40 @@ function stationStatusBadge(status) {
   const value = String(status ?? 'Unknown');
   const lower = value.toLowerCase();
   let kind = '';
-  if (['completed', 'answered', 'streaming'].includes(lower)) kind = 'ok';
-  if (['ringing', 'initiated', 'requested'].includes(lower)) kind = 'warn';
-  if (['failed', 'rejected'].includes(lower)) kind = 'danger';
+  if (['completed', 'answered', 'streaming', 'picked up'].includes(lower)) kind = 'ok';
+  if (['ringing', 'initiated', 'requested', 'dialing'].includes(lower)) kind = 'warn';
+  if (
+    ['failed', 'rejected', 'busy', 'no answer', 'not picked up', 'cancelled'].includes(
+      lower,
+    )
+  ) {
+    kind = 'danger';
+  }
   return `<span class="badge ${kind}">${escapeHtml(value)}</span>`;
+}
+
+function pickupBadge(call) {
+  const code = call?.pickupCode || (call?.pickedUp ? 'picked_up' : null);
+  const label =
+    call?.pickup ||
+    (code === 'picked_up'
+      ? 'Picked up'
+      : code === 'not_picked_up'
+        ? 'Not picked up'
+        : code === 'ringing'
+          ? 'Ringing'
+          : code === 'dialing'
+            ? 'Dialing'
+            : 'Unknown');
+  const kind =
+    code === 'picked_up'
+      ? 'ok'
+      : code === 'not_picked_up'
+        ? 'danger'
+        : code === 'ringing' || code === 'dialing'
+          ? 'warn'
+          : '';
+  return `<span class="badge ${kind}">${escapeHtml(label)}</span>`;
 }
 
 function readStationFiltersFromDom() {
@@ -993,7 +1024,8 @@ function renderStationCallsTable(items) {
             <th>Destination</th>
             <th>DID</th>
             <th>Started</th>
-            <th>Answered</th>
+            <th>Pickup</th>
+            <th>Answered at</th>
             <th>Ended</th>
             <th>Duration</th>
             <th>Status</th>
@@ -1012,6 +1044,7 @@ function renderStationCallsTable(items) {
                 <td>${escapeHtml(row.destinationMasked ?? '—')}</td>
                 <td>${escapeHtml(row.didMasked ?? '—')}</td>
                 <td>${escapeHtml(formatDate(row.requestedAt || row.initiatedAt || row.streamingAt))}</td>
+                <td>${pickupBadge(row)}</td>
                 <td>${escapeHtml(formatDate(row.answeredAt))}</td>
                 <td>${escapeHtml(formatDate(row.endedAt))}</td>
                 <td>${escapeHtml(stationDuration(row.durationSeconds))}</td>
@@ -1044,12 +1077,14 @@ async function showStationCallDetails(id) {
     `Call ${call.id}`,
     `
       <div class="station-drawer-meta">
+        <div><span>Pickup</span><br>${pickupBadge(call)}</div>
         <div><span>Status</span><br>${stationStatusBadge(call.status)}</div>
         <div><span>Duration</span><br>${escapeHtml(stationDuration(call.durationSeconds))}</div>
         <div><span>Destination</span><br>${escapeHtml(call.destinationMasked ?? '—')}</div>
         <div><span>DID</span><br>${escapeHtml(call.didMasked ?? '—')}</div>
+        <div><span>Answered at</span><br>${escapeHtml(formatDate(call.answeredAt))}</div>
         <div><span>WebSocket</span><br>${escapeHtml(call.websocket?.result ?? 'unknown')} ${call.websocket?.closeCode != null ? `(${escapeHtml(call.websocket.closeCode)})` : ''}</div>
-        <div><span>Webhook</span><br>${escapeHtml(call.webhook?.result ?? 'missing')}</div>
+        <div><span>Webhook</span><br>${escapeHtml(call.webhook?.result ?? 'missing')}${call.webhook?.status ? ` · ${escapeHtml(call.webhook.status)}` : ''}</div>
         <div><span>Audio</span><br>${escapeHtml(call.audio?.status ?? 'Unknown')}</div>
         <div><span>Keypad</span><br>${escapeHtml(call.keypadOption ?? 'Not supported')}</div>
       </div>
@@ -1185,7 +1220,7 @@ async function renderCallStation() {
         <label>Status
           <select id="station-status">
             <option value="">Any</option>
-            ${['requested','initiated','ringing','answered','streaming','completed','failed','rejected','unknown']
+            ${['requested','initiated','ringing','answered','streaming','completed','no_answer','busy','failed','rejected','cancelled','unknown']
               .map(
                 (s) =>
                   `<option value="${s}" ${f.status === s ? 'selected' : ''}>${s}</option>`,
@@ -1414,6 +1449,8 @@ async function renderOutbound() {
   const previewPlayer = $('#outbound-preview-player');
   const previewAudio = $('#outbound-preview-audio');
   const previewMeta = $('#outbound-preview-meta');
+  let previewObjectUrl = null;
+  let previewRequestId = 0;
 
   const allVoices = health.voiceOptions || [
     { id: 'en-IN-NeerjaNeural', label: 'Neerja', description: 'Female', language: 'en', gender: 'female' },
@@ -1446,19 +1483,44 @@ async function renderOutbound() {
     return langInput.value || 'en';
   }
 
+  function clearPreviewAudio() {
+    previewAudio.pause();
+    try {
+      previewAudio.currentTime = 0;
+    } catch {
+      // ignore
+    }
+    previewAudio.removeAttribute('src');
+    previewAudio.load();
+    if (previewObjectUrl) {
+      URL.revokeObjectURL(previewObjectUrl);
+      previewObjectUrl = null;
+    }
+  }
+
   function stopPreviewAudio() {
     previewAudio.pause();
-    previewAudio.currentTime = 0;
+    try {
+      previewAudio.currentTime = 0;
+    } catch {
+      // ignore
+    }
   }
 
   function loadPreviewAudio(preview, metaLabel = '') {
     if (!preview?.base64 || !preview?.mimeType) {
       previewPlayer.hidden = true;
-      previewAudio.removeAttribute('src');
+      clearPreviewAudio();
       return;
     }
-    stopPreviewAudio();
-    previewAudio.src = `data:${preview.mimeType};base64,${preview.base64}`;
+    clearPreviewAudio();
+    const binary = atob(preview.base64);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
+    const blob = new Blob([bytes], { type: preview.mimeType });
+    previewObjectUrl = URL.createObjectURL(blob);
+    previewAudio.src = previewObjectUrl;
+    previewAudio.load();
     previewMeta.textContent = metaLabel;
     previewPlayer.hidden = false;
   }
@@ -1518,8 +1580,9 @@ async function renderOutbound() {
     $$('.voice-option', voiceToggle).forEach((btn) => {
       btn.addEventListener('click', () => {
         voiceInput.value = btn.dataset.voice;
-        stopPreviewAudio();
+        clearPreviewAudio();
         previewPlayer.hidden = true;
+        previewMeta.textContent = '';
         $$('.voice-option', voiceToggle).forEach((other) => {
           const active = other === btn;
           other.classList.toggle('active', active);
@@ -1544,8 +1607,9 @@ async function renderOutbound() {
         other.classList.toggle('active', on);
         other.setAttribute('aria-checked', on ? 'true' : 'false');
       });
-      stopPreviewAudio();
+      clearPreviewAudio();
       previewPlayer.hidden = true;
+      previewMeta.textContent = '';
       renderVoiceOptions();
       applyLanguageSample(btn.dataset.lang);
     });
@@ -1572,7 +1636,7 @@ async function renderOutbound() {
   syncCallButton();
 
   $('#outbound-refresh').addEventListener('click', () => {
-    stopPreviewAudio();
+    clearPreviewAudio();
     renderOutbound().catch((error) => showNotice(error.message, 'error'));
   });
 
@@ -1594,9 +1658,10 @@ async function renderOutbound() {
   }
 
   $('#outbound-preview').addEventListener('click', async () => {
+    const requestId = (previewRequestId += 1);
     try {
       clearNotice();
-      stopPreviewAudio();
+      clearPreviewAudio();
       const previewBtn = $('#outbound-preview');
       previewBtn.disabled = true;
       previewBtn.textContent = 'Synthesizing…';
@@ -1610,6 +1675,9 @@ async function renderOutbound() {
           voice: requested,
         }),
       });
+      if (requestId !== previewRequestId || selectedVoice() !== requested) {
+        return;
+      }
       const actualVoice = result.audio?.voice || result.voice;
       if (actualVoice && actualVoice !== requested) {
         throw new Error(
@@ -1632,6 +1700,7 @@ async function renderOutbound() {
         `Destination ${result.phoneMasked || '—'}`,
         `Voice ${voiceLabel} (${actualVoice || requested})`,
         `Language ${selectedLanguage() === 'te' ? 'Telugu' : 'English'}`,
+        `Locale ${result.audio?.locale || '—'}`,
         `Message length ${result.messageLength}`,
         `Repeat ${result.repeatCount}`,
         result.audio?.durationSeconds != null
@@ -1645,12 +1714,17 @@ async function renderOutbound() {
       );
       await previewAudio.play().catch(() => {});
     } catch (error) {
-      showNotice(error.message, 'error');
-      previewPlayer.hidden = true;
+      if (requestId === previewRequestId) {
+        showNotice(error.message, 'error');
+        clearPreviewAudio();
+        previewPlayer.hidden = true;
+      }
     } finally {
-      const previewBtn = $('#outbound-preview');
-      previewBtn.disabled = false;
-      previewBtn.textContent = 'Preview speech';
+      if (requestId === previewRequestId) {
+        const previewBtn = $('#outbound-preview');
+        previewBtn.disabled = false;
+        previewBtn.textContent = 'Preview speech';
+      }
     }
   });
 

@@ -258,11 +258,15 @@ export function createApp({
                     ? 'Outbound dialer'
                     : 'Voice stream',
                   status: String(item.status || 'unknown').toLowerCase(),
+                  pickup: item.pickup || null,
+                  pickupCode: item.pickupCode || null,
+                  pickedUp: item.pickedUp === true,
                   selected_digit: null,
                   interpreted_response:
-                    item.durationSeconds != null
+                    item.pickup ||
+                    (item.durationSeconds != null
                       ? `${item.durationSeconds}s audio`
-                      : item.timeline?.[item.timeline.length - 1]?.event || '—',
+                      : item.timeline?.[item.timeline.length - 1]?.event || '—'),
                   duration_seconds: item.durationSeconds,
                   started_at:
                     item.requestedAt ||
