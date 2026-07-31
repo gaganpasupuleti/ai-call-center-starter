@@ -55,6 +55,8 @@ export class OutboundPromptStore {
     interactive = false,
     menu = null,
     responses = null,
+    agentPhone = null,
+    agentPhoneMasked = null,
   }) {
     const appCallId = `ob-${randomUUID().replace(/-/g, '').slice(0, 16)}`;
     const expiresAt = new Date(Date.now() + this.ttlMs).toISOString();
@@ -88,6 +90,8 @@ export class OutboundPromptStore {
       interactive: interactive === true,
       menu: menu ?? null,
       responseMeta,
+      agentPhone: agentPhone ? String(agentPhone) : null,
+      agentPhoneMasked: agentPhoneMasked ?? null,
       audioPath,
       createdAt: nowIso(),
       expiresAt,
@@ -107,7 +111,7 @@ export class OutboundPromptStore {
       bytes: Buffer.from(mulawBytes),
       responseBytes,
     });
-    return record;
+    return { ...record };
   }
 
   get(appCallId) {
@@ -194,6 +198,8 @@ export class OutboundPromptStore {
           interactive: prompt.interactive === true,
           menu: prompt.menu ?? null,
           responseMeta: prompt.responseMeta ?? {},
+          agentPhone: prompt.agentPhone ?? null,
+          agentPhoneMasked: prompt.agentPhoneMasked ?? null,
           audioPath: prompt.audioPath,
           createdAt: prompt.createdAt,
           expiresAt: prompt.expiresAt,

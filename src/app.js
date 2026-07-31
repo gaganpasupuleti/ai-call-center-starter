@@ -35,6 +35,7 @@ import {
   normalizeRepeatCount,
   normalizeInteractiveMenu,
   buildInteractivePromptText,
+  formatTransferPhone,
   OUTBOUND_VOICE_OPTIONS,
   OUTBOUND_LANGUAGE_OPTIONS,
 } from './streaming/outbound/phone.js';
@@ -531,6 +532,26 @@ export function createApp({
           });
         }
 
+        let agentTransfer = { ok: true, phone: null, digits: null, masked: null };
+        if (interactivePick.interactive) {
+          const agentRaw =
+            body.agentPhone ??
+            body.agent_phone ??
+            body.agentNumber ??
+            process.env.OUTBOUND_AGENT_PHONE ??
+            '';
+          if (String(agentRaw).trim()) {
+            agentTransfer = formatTransferPhone(agentRaw);
+            if (!agentTransfer.ok) {
+              return sendJson(response, 400, {
+                error:
+                  'Agent mobile must be a 10-digit Indian number (for key 9 transfer)',
+                code: 'invalid_agent_phone',
+              });
+            }
+          }
+        }
+
         const spokenText = buildInteractivePromptText(message.text, {
           interactive: interactivePick.interactive,
           voice: voicePick.voice,
@@ -610,6 +631,8 @@ export function createApp({
           interactive: interactivePick.interactive,
           menu: interactivePick.menu,
           responses: interactivePick.interactive ? responseAudio : null,
+          agentPhone: agentTransfer.phone,
+          agentPhoneMasked: agentTransfer.masked,
         });
 
         let stationRow = null;
@@ -663,6 +686,12 @@ export function createApp({
           interactiveDigits: interactivePick.interactive
             ? Object.keys(interactivePick.menu).filter((k) => k !== 'default')
             : [],
+          agentTransfer: interactivePick.interactive
+            ? {
+                enabled: Boolean(agentTransfer.phone),
+                agentMasked: agentTransfer.masked,
+              }
+            : { enabled: false, agentMasked: null },
           audio: {
             durationSeconds: Number(
               (synthesized.durationSeconds * repeatCount).toFixed(3),

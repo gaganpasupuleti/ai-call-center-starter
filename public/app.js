@@ -930,8 +930,9 @@ const STATION_EVENT_LABELS = {
   keypad_response_queued: 'Key reply playing',
   dtmf_no_response_audio: 'Key pressed (no reply audio)',
   failsafe_hangup_scheduled: 'Auto hangup scheduled',
-  failsafe_hangup: 'Auto hangup',
-  final_status_stored: 'Final status saved',
+  agent_transfer_scheduled: 'Connecting to agent',
+  agent_transfer_sent: 'Transferred to agent',
+  agent_transfer_failed: 'Agent transfer failed',
 };
 
 function setCallStationConnection(status) {
@@ -1517,6 +1518,17 @@ async function renderOutbound() {
                   <small>After the message: 1 = Interested · 2 = Call me back · 9 = Talk to an agent</small>
                 </span>
               </label>
+              <div class="admin-field" id="outbound-agent-wrap" hidden>
+                <label for="outbound-agent-phone">Agent mobile (for key 9)</label>
+                <input
+                  id="outbound-agent-phone"
+                  name="agentPhone"
+                  inputmode="numeric"
+                  autocomplete="tel"
+                  placeholder="10-digit agent number"
+                />
+                <p class="outbound-tip">When the caller presses 9, we connect them to this number after the hold message.</p>
+              </div>
               <label class="admin-confirm">
                 <input type="checkbox" id="outbound-confirm" ${gatesOpen ? '' : 'disabled'} />
                 <span>
@@ -1568,6 +1580,8 @@ async function renderOutbound() {
   const langInput = $('#outbound-lang');
   const confirmInput = $('#outbound-confirm');
   const interactiveInput = $('#outbound-interactive');
+  const agentWrap = $('#outbound-agent-wrap');
+  const agentPhoneInput = $('#outbound-agent-phone');
   const callBtn = $('#outbound-call');
   const resultHost = $('#outbound-result');
   const messageHint = $('#outbound-message-hint');
@@ -1755,6 +1769,11 @@ async function renderOutbound() {
   renderVoiceOptions(health.defaultVoice || 'en-IN-NeerjaNeural');
   updateMessageChrome();
 
+  function syncAgentField() {
+    const on = interactiveInput?.checked === true;
+    if (agentWrap) agentWrap.hidden = !on;
+  }
+
   function syncCallButton() {
     const ready =
       gatesOpen &&
@@ -1766,6 +1785,8 @@ async function renderOutbound() {
   }
 
   confirmInput.addEventListener('change', syncCallButton);
+  interactiveInput?.addEventListener('change', syncAgentField);
+  syncAgentField();
   phoneInput.addEventListener('input', syncCallButton);
   messageInput.addEventListener('input', () => {
     updateMessageChrome();
@@ -1885,6 +1906,10 @@ async function renderOutbound() {
           repeatCount: Number(repeatInput.value || 1),
           voice: selectedVoice(),
           interactive: interactiveInput?.checked === true,
+          agentPhone:
+            interactiveInput?.checked === true
+              ? agentPhoneInput?.value?.trim() || ''
+              : '',
           confirm: true,
         }),
       });
@@ -1898,6 +1923,11 @@ async function renderOutbound() {
         `Destination ${result.phoneMasked || '—'}`,
         `Voice ${result.audio?.voice || selectedVoice()}`,
         `Interactive ${result.interactive ? 'yes (1/2/9)' : 'no'}`,
+        `Agent transfer ${
+          result.agentTransfer?.enabled
+            ? `yes → ${result.agentTransfer.agentMasked}`
+            : 'off'
+        }`,
         `App call id ${result.appCallId || '—'}`,
         `Live Calls ref ${result.stationRef || '—'}`,
         `Network request: ${result.networkRequestMade ? 'yes' : 'no'}`,

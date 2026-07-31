@@ -144,6 +144,21 @@ export function englishLabelForDigit(digit) {
   return INTERACTIVE_DIGIT_LABELS_EN[key] || INTERACTIVE_DIGIT_LABELS_EN.default;
 }
 
+/**
+ * Format a 10-digit Indian mobile for SmartPing external transfer.
+ * Simulator / docs use +91XXXXXXXXXX.
+ */
+export function formatTransferPhone(raw) {
+  const normalized = normalizeOutboundPhone(raw);
+  if (!normalized.ok) return normalized;
+  return {
+    ok: true,
+    phone: `+91${normalized.phone}`,
+    digits: normalized.phone,
+    masked: normalized.masked,
+  };
+}
+
 export function interactiveLanguageForVoice(voiceId) {
   return voiceMeta(voiceId)?.language === 'te' ? 'te' : 'en';
 }

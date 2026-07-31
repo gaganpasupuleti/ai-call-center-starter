@@ -15,7 +15,7 @@ import {
   isFixedWelcomeMode,
 } from './fixed-audio.js';
 import { getOutboundPromptStore } from './outbound/prompt-store.js';
-import { englishLabelForDigit } from './outbound/phone.js';
+import { englishLabelForDigit, formatTransferPhone } from './outbound/phone.js';
 
 const MESSAGE_END_HANGUP_MS = 10_000;
 
@@ -293,9 +293,14 @@ export class StreamSessionManager {
           session.metadata.interactive = true;
           session.metadata.interactiveAppCallId = appCallId;
           session.metadata.keypadCaptured = false;
+          session.metadata.agentPhone = built.prompt.agentPhone || null;
+          session.metadata.agentPhoneMasked =
+            built.prompt.agentPhoneMasked || null;
           this.callStation?.recordTimeline?.(session, {
             event: 'interactive_listening',
-            detail: 'awaiting_dtmf',
+            detail: built.prompt.agentPhone
+              ? 'awaiting_dtmf;agent_ready'
+              : 'awaiting_dtmf',
           });
         }
         this.callStation?.recordTimeline?.(session, {
@@ -448,6 +453,27 @@ export class StreamSessionManager {
         event: 'dtmf_no_response_audio',
         detail: `digit=${digit};${labelEn}`,
       });
+      if (digit === '9' && session.metadata.agentPhone) {
+        const sent = this.transferToExternalNumber(
+          session,
+          session.metadata.agentPhone,
+        );
+        if (session.failsafeHangupTimer) {
+          clearTimeout(session.failsafeHangupTimer);
+          session.failsafeHangupTimer = null;
+        }
+        this.callStation?.recordTimeline?.(session, {
+          event: sent ? 'agent_transfer_sent' : 'agent_transfer_failed',
+          detail: session.metadata.agentPhoneMasked || 'agent',
+        });
+        return {
+          ok: true,
+          digit,
+          played: false,
+          label: labelEn,
+          transferScheduled: true,
+        };
+      }
       return { ok: true, digit, played: false, label: labelEn };
     }
 
@@ -458,11 +484,45 @@ export class StreamSessionManager {
       event: 'keypad_response_queued',
       detail: `digit=${digit};${labelEn};chunks=${chunks}`,
     });
-    // Keep failsafe: hang up shortly after keypad reply finishes (+10s grace).
     const replyMs = Math.max(
       2_000,
       Math.round((response.durationSeconds || 2) * 1000),
     );
+
+    // Key 9 → connect to live agent number after the hold message.
+    if (digit === '9' && session.metadata.agentPhone) {
+      if (session.failsafeHangupTimer) {
+        clearTimeout(session.failsafeHangupTimer);
+        session.failsafeHangupTimer = null;
+      }
+      session.metadata.failsafeHangupScheduled = true;
+      this.callStation?.recordTimeline?.(session, {
+        event: 'agent_transfer_scheduled',
+        detail: session.metadata.agentPhoneMasked || 'agent',
+      });
+      setTimeout(() => {
+        if (session.state === STREAM_STATES.closed) return;
+        const sent = this.transferToExternalNumber(
+          session,
+          session.metadata.agentPhone,
+        );
+        this.callStation?.recordTimeline?.(session, {
+          event: sent ? 'agent_transfer_sent' : 'agent_transfer_failed',
+          detail: session.metadata.agentPhoneMasked || 'agent',
+        });
+      }, replyMs + 400);
+      return {
+        ok: true,
+        digit,
+        played: true,
+        label: labelEn,
+        transferScheduled: true,
+        enqueuedChunks: chunks,
+        durationSeconds: response.durationSeconds,
+      };
+    }
+
+    // Keep failsafe: hang up shortly after keypad reply finishes (+10s grace).
     this.#scheduleFailsafeHangup(session, replyMs + MESSAGE_END_HANGUP_MS, 'keypad_reply');
     return {
       ok: true,
