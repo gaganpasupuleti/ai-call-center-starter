@@ -152,9 +152,9 @@ async function renderDashboard() {
           <div class="cc-card-head">
             <div>
               <div class="cc-card-kicker">Recent calls</div>
-              <h3>What just happened</h3>
+              <h3>Dialed calls</h3>
             </div>
-            <a class="admin-btn ghost" href="#/call-station">Open live</a>
+            <a class="admin-btn ghost" href="#/calls">All dialed</a>
           </div>
           <div class="cc-scroll">
             ${renderRecentLiveCallsTable(data.recentCalls)}
@@ -177,39 +177,83 @@ async function renderDashboard() {
   `;
 }
 
+function renderDialedCallsTable(items, { clickable = true } = {}) {
+  if (!items?.length) {
+    return `<div class="empty">No dialed calls yet. Place one from Outbound.</div>`;
+  }
+  return `
+    <div class="table-wrap dialed-table-wrap">
+      <table class="dialed-table">
+        <thead>
+          <tr>
+            <th>Call ID</th>
+            <th>To</th>
+            <th>When</th>
+            <th>Answered</th>
+            <th>Status</th>
+            <th>Caller chose</th>
+            <th>Length</th>
+            ${clickable ? '<th></th>' : ''}
+          </tr>
+        </thead>
+        <tbody>
+          ${items
+            .map((row) => {
+              const id = row.id || row.stationRef || '—';
+              const to =
+                row.destinationMasked ||
+                row.phone ||
+                row.lead_name ||
+                '—';
+              const when =
+                row.requestedAt ||
+                row.initiatedAt ||
+                row.streamingAt ||
+                row.started_at ||
+                row.created_at ||
+                null;
+              const action = keypadLabel(row.keypadOption, row);
+              const rowAttrs = clickable
+                ? `class="station-row dialed-row" data-station-id="${escapeHtml(id)}" tabindex="0" role="button"`
+                : '';
+              return `<tr ${rowAttrs}>
+                <td class="mono">${escapeHtml(id)}</td>
+                <td>${escapeHtml(to)}</td>
+                <td>${escapeHtml(formatStationTime(when))}</td>
+                <td>${pickupBadge(row)}</td>
+                <td>${stationStatusBadge(row.status)}</td>
+                <td>${escapeHtml(action)}</td>
+                <td>${escapeHtml(stationDuration(row.durationSeconds ?? row.duration_seconds))}</td>
+                ${
+                  clickable
+                    ? `<td><span class="dialed-open">Open</span></td>`
+                    : ''
+                }
+              </tr>`;
+            })
+            .join('')}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
 function renderRecentLiveCallsTable(calls) {
   if (!calls?.length) return emptyState('No calls yet. Start from New call.');
   const isStation = calls.some((c) => c.source === 'call-station' || c.stationRef);
   if (!isStation) return renderCallsTable(calls, { compact: true });
-  return `
-    <div class="cc-call-list">
-      ${calls
-        .map((call) => {
-          const note = String(call.interpreted_response || '').trim();
-          const cleanNote =
-            !note || /[\u0900-\u0D7F]/.test(note)
-              ? call.pickup || '—'
-              : note;
-          return `
-          <a class="cc-call-row" href="#/call-station">
-            <div class="cc-call-row-top">
-              <strong class="mono">${escapeHtml(call.stationRef || call.id)}</strong>
-              <span>${escapeHtml(formatStationTime(call.started_at || call.created_at))}</span>
-            </div>
-            <div class="station-call-chips">
-              ${pickupBadge(call)}
-              ${stationStatusBadge(call.status)}
-            </div>
-            <div class="cc-call-row-meta">
-              <span>${escapeHtml(call.phone || '—')}</span>
-              <span>${escapeHtml(call.campaign_name || 'Call')}</span>
-              <span>${escapeHtml(cleanNote)}</span>
-            </div>
-          </a>`;
-        })
-        .join('')}
-    </div>
-  `;
+  // Map dashboard-shaped rows into dialed-table fields.
+  const rows = calls.map((call) => ({
+    ...call,
+    id: call.stationRef || call.id,
+    destinationMasked: call.phone || call.destinationMasked || call.lead_name,
+    requestedAt: call.started_at || call.created_at,
+    durationSeconds: call.duration_seconds,
+    keypadOption: call.keypadOption || call.interpreted_response,
+    keypadLabel: call.keypadLabel,
+    keypadDigit: call.keypadDigit ?? call.selected_digit,
+  }));
+  return renderDialedCallsTable(rows);
 }
 
 function renderCallsTable(calls, { compact = false, mockControls = false } = {}) {
@@ -594,32 +638,17 @@ async function renderCalls() {
     api(`/api/calls?${query}`),
     api('/api/call-station/calls').catch(() => ({ items: [] })),
   ]);
-  const liveMapped = (live.items || []).slice(0, 50).map((item) => ({
-    id: item.id,
-    lead_name: item.destinationMasked || 'Live stream',
-    phone: item.destinationMasked || '—',
-    campaign_name: String(item.id || '').startsWith('OB-')
-      ? 'Outbound dialer'
-      : 'Voice stream',
-    status: String(item.status || 'unknown').toLowerCase(),
-    selected_digit: null,
-    interpreted_response:
-      item.durationSeconds != null
-        ? `${item.durationSeconds}s audio`
-        : item.timeline?.[item.timeline.length - 1]?.event || '—',
-    duration_seconds: item.durationSeconds,
-    started_at: item.requestedAt || item.initiatedAt || item.answeredAt || null,
-    created_at: item.requestedAt || item.initiatedAt || item.answeredAt || null,
-    stationRef: item.id,
-    source: 'call-station',
-  }));
+  const liveMapped = (live.items || []).slice(0, 100);
   root.innerHTML = `
     <article class="card">
       <div class="card-header">
-        <div><h3>Live dial & stream log</h3><p>Real SmartPing activity from SQLite</p></div>
-        <a class="admin-btn ghost" href="#/call-station">Live Calls</a>
+        <div>
+          <h3>Dialed calls</h3>
+          <p>Every Outbound / Live Calls dial — answer status and what the caller chose</p>
+        </div>
+        <a class="admin-btn ghost" href="#/call-station">Live monitor</a>
       </div>
-      ${renderRecentLiveCallsTable(liveMapped)}
+      ${renderDialedCallsTable(liveMapped)}
     </article>
     <article class="card">
       <div class="card-header">
@@ -1122,35 +1151,7 @@ function appendStationActivity(message) {
 }
 
 function renderStationCallsTable(items) {
-  if (!items || items.length === 0) {
-    return `<div class="empty">No calls yet. Place one from New call, then watch it here.</div>`;
-  }
-  return `
-    <div class="station-call-list">
-      ${items
-        .map((row) => {
-          const action = keypadLabel(row.keypadOption, row);
-          return `
-          <button type="button" class="station-call-card station-row" data-station-id="${escapeHtml(row.id)}">
-            <div class="station-call-top">
-              <strong class="mono">${escapeHtml(row.id)}</strong>
-              <span class="station-call-time">${escapeHtml(formatStationTime(row.requestedAt || row.initiatedAt || row.streamingAt))}</span>
-            </div>
-            <div class="station-call-chips">
-              ${pickupBadge(row)}
-              ${stationStatusBadge(row.status)}
-              ${statusChip(action === 'None yet' ? 'No choice yet' : action, action === 'None yet' ? '' : 'ok')}
-            </div>
-            <div class="station-call-meta">
-              <span><em>To</em> ${escapeHtml(row.destinationMasked ?? '—')}</span>
-              <span><em>Length</em> ${escapeHtml(stationDuration(row.durationSeconds))}</span>
-              <span><em>Caller chose</em> ${escapeHtml(action)}</span>
-            </div>
-          </button>`;
-        })
-        .join('')}
-    </div>
-  `;
+  return renderDialedCallsTable(items);
 }
 
 function timelineDelta(prevTs, ts) {
@@ -1363,7 +1364,7 @@ async function renderCallStation() {
           <div class="cc-card-head">
             <div>
               <div class="cc-card-kicker">Recent calls</div>
-              <h3>Tap a call for full details</h3>
+              <h3>Dialed calls table</h3>
             </div>
           </div>
           <div id="station-table-host" class="cc-scroll">${renderStationSkeleton()}</div>
@@ -1947,7 +1948,7 @@ const titles = {
   dashboard: ['Command center', 'Dashboard'],
   leads: ['Contacts', 'Leads'],
   campaigns: ['Outbound', 'Campaigns'],
-  calls: ['Activity', 'Calls'],
+  calls: ['Dialed calls', 'Calls'],
   outbound: ['New call', 'Outbound'],
   'call-station': ['Monitor', 'Live Calls'],
   'follow-ups': ['Outbox', 'Follow-ups'],

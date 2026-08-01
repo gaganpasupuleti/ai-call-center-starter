@@ -264,8 +264,12 @@ export function createApp({
                   pickup: item.pickup || null,
                   pickupCode: item.pickupCode || null,
                   pickedUp: item.pickedUp === true,
-                  selected_digit: null,
+                  selected_digit: item.keypadDigit ?? null,
+                  keypadDigit: item.keypadDigit ?? null,
+                  keypadLabel: item.keypadLabel ?? null,
+                  keypadOption: item.keypadOption ?? null,
                   interpreted_response:
+                    item.keypadLabel ||
                     item.pickup ||
                     (item.durationSeconds != null
                       ? `${item.durationSeconds}s audio`
