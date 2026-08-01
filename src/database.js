@@ -212,6 +212,27 @@ export class Repository {
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL
       );
+
+      CREATE TABLE IF NOT EXISTS dialed_calls (
+        id TEXT PRIMARY KEY,
+        public_ref TEXT NOT NULL UNIQUE,
+        app_call_id TEXT,
+        provider_call_id TEXT,
+        destination_masked TEXT,
+        did_masked TEXT,
+        status TEXT NOT NULL,
+        selected_digit TEXT,
+        interpreted_response TEXT,
+        duration_seconds REAL,
+        voice TEXT,
+        source TEXT NOT NULL DEFAULT 'outbound-dialer',
+        answered_at TEXT,
+        completed_at TEXT,
+        started_at TEXT,
+        metadata_json TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
     `);
 
     this.ensureColumn('calls', 'interpreted_response', 'TEXT');
@@ -1403,7 +1424,13 @@ export class Repository {
         timestamp,
         timestamp,
       );
-    return this.getStreamTestCall(id);
+    const created = this.getStreamTestCall(id);
+    try {
+      this.syncDialedCallFromStationRow(created);
+    } catch {
+      // ignore
+    }
+    return created;
   }
 
   getStreamTestCall(id) {
@@ -1546,7 +1573,13 @@ export class Repository {
         timestamp,
         id,
       );
-    return this.getStreamTestCall(id);
+    const updated = this.getStreamTestCall(id);
+    try {
+      this.syncDialedCallFromStationRow(updated);
+    } catch {
+      // dialed_calls sync must not break stream monitoring
+    }
+    return updated;
   }
 
   listStreamTestCalls(filters = {}) {
@@ -1595,6 +1628,257 @@ export class Repository {
     if (filters.to) {
       const to = Date.parse(filters.to);
       rows = rows.filter((row) => Date.parse(row.created_at) <= to);
+    }
+    return rows;
+  }
+
+  #mapDialedCall(row) {
+    if (!row) return null;
+    return {
+      id: row.id,
+      public_ref: row.public_ref,
+      app_call_id: row.app_call_id,
+      provider_call_id: row.provider_call_id,
+      destination_masked: row.destination_masked,
+      did_masked: row.did_masked,
+      status: row.status,
+      selected_digit: row.selected_digit,
+      interpreted_response: row.interpreted_response,
+      duration_seconds: row.duration_seconds,
+      voice: row.voice,
+      source: row.source || 'outbound-dialer',
+      answered_at: row.answered_at,
+      completed_at: row.completed_at,
+      started_at: row.started_at,
+      created_at: row.created_at,
+      updated_at: row.updated_at,
+      metadata: parseJson(row.metadata_json, {}),
+      // Shape compatible with Calls UI /api/calls items
+      lead_name: row.destination_masked || 'Outbound',
+      phone: row.destination_masked || '—',
+      campaign_name: 'Outbound dialer',
+      stationRef: row.public_ref,
+      pickupCode: row.answered_at
+        ? 'picked_up'
+        : ['failed', 'no_answer', 'busy', 'rejected'].includes(
+              String(row.status || '').toLowerCase(),
+            )
+          ? 'not_picked_up'
+          : ['ringing', 'initiated', 'requested'].includes(
+                String(row.status || '').toLowerCase(),
+              )
+            ? String(row.status).toLowerCase()
+            : null,
+      pickedUp: Boolean(row.answered_at),
+    };
+  }
+
+  createDialedCall(input = {}) {
+    const publicRef =
+      input.publicRef || `OB-${Date.now().toString(36)}`;
+    const existing = this.getDialedCallByPublicRef(publicRef);
+    if (existing) {
+      return this.updateDialedCall(publicRef, {
+        appCallId: input.appCallId,
+        providerCallId: input.providerCallId,
+        destinationMasked: input.destinationMasked,
+        didMasked: input.didMasked,
+        status: input.status,
+        selectedDigit: input.selectedDigit,
+        interpretedResponse: input.interpretedResponse,
+        durationSeconds: input.durationSeconds,
+        voice: input.voice,
+        answeredAt: input.answeredAt,
+        completedAt: input.completedAt,
+        startedAt: input.startedAt,
+        metadata: input.metadata,
+      });
+    }
+    const id = input.id || randomUUID();
+    const timestamp = now();
+    this.db
+      .prepare(`
+        INSERT INTO dialed_calls (
+          id, public_ref, app_call_id, provider_call_id,
+          destination_masked, did_masked, status,
+          selected_digit, interpreted_response, duration_seconds, voice, source,
+          answered_at, completed_at, started_at, metadata_json,
+          created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `)
+      .run(
+        id,
+        publicRef,
+        input.appCallId ?? null,
+        input.providerCallId ?? null,
+        input.destinationMasked ?? null,
+        input.didMasked ?? null,
+        input.status ?? 'initiated',
+        input.selectedDigit ?? null,
+        input.interpretedResponse ?? null,
+        input.durationSeconds ?? null,
+        input.voice ?? null,
+        input.source ?? 'outbound-dialer',
+        input.answeredAt ?? null,
+        input.completedAt ?? null,
+        input.startedAt ?? timestamp,
+        JSON.stringify(input.metadata ?? {}),
+        timestamp,
+        timestamp,
+      );
+    return this.getDialedCallByPublicRef(publicRef);
+  }
+
+  getDialedCallByPublicRef(publicRef) {
+    if (!publicRef) return null;
+    const row = this.db
+      .prepare('SELECT * FROM dialed_calls WHERE public_ref = ? OR id = ?')
+      .get(publicRef, publicRef);
+    return this.#mapDialedCall(row);
+  }
+
+  getDialedCallByAppCallId(appCallId) {
+    if (!appCallId) return null;
+    const row = this.db
+      .prepare(
+        'SELECT * FROM dialed_calls WHERE app_call_id = ? ORDER BY created_at DESC',
+      )
+      .get(appCallId);
+    return this.#mapDialedCall(row);
+  }
+
+  updateDialedCall(publicRefOrId, patch = {}) {
+    const existing = this.getDialedCallByPublicRef(publicRefOrId);
+    if (!existing) return null;
+    const timestamp = now();
+    this.db
+      .prepare(`
+        UPDATE dialed_calls SET
+          provider_call_id = ?,
+          destination_masked = ?,
+          did_masked = ?,
+          status = ?,
+          selected_digit = ?,
+          interpreted_response = ?,
+          duration_seconds = ?,
+          voice = ?,
+          answered_at = ?,
+          completed_at = ?,
+          started_at = ?,
+          metadata_json = ?,
+          updated_at = ?
+        WHERE id = ?
+      `)
+      .run(
+        patch.providerCallId ?? existing.provider_call_id,
+        patch.destinationMasked ?? existing.destination_masked,
+        patch.didMasked ?? existing.did_masked,
+        patch.status ?? existing.status,
+        patch.selectedDigit !== undefined
+          ? patch.selectedDigit
+          : existing.selected_digit,
+        patch.interpretedResponse !== undefined
+          ? patch.interpretedResponse
+          : existing.interpreted_response,
+        patch.durationSeconds !== undefined
+          ? patch.durationSeconds
+          : existing.duration_seconds,
+        patch.voice ?? existing.voice,
+        patch.answeredAt !== undefined
+          ? patch.answeredAt
+          : existing.answered_at,
+        patch.completedAt !== undefined
+          ? patch.completedAt
+          : existing.completed_at,
+        patch.startedAt ?? existing.started_at,
+        JSON.stringify(patch.metadata ?? existing.metadata ?? {}),
+        timestamp,
+        existing.id,
+      );
+    return this.getDialedCallByPublicRef(existing.public_ref);
+  }
+
+  /**
+   * Keep dialed_calls in sync when a linked stream_test_calls row changes.
+   */
+  syncDialedCallFromStationRow(stationRow) {
+    if (!stationRow) return null;
+    const meta = stationRow.metadata || {};
+    const isOutbound =
+      meta.source === 'outbound-dialer' ||
+      String(stationRow.public_ref || '').startsWith('OB-');
+    if (!isOutbound) return null;
+
+    let dialed =
+      this.getDialedCallByPublicRef(stationRow.public_ref) ||
+      this.getDialedCallByAppCallId(stationRow.app_call_id);
+    if (!dialed) {
+      dialed = this.createDialedCall({
+        publicRef: stationRow.public_ref,
+        appCallId: stationRow.app_call_id,
+        providerCallId: stationRow.provider_call_id,
+        destinationMasked: stationRow.destination_masked,
+        didMasked: stationRow.did_masked,
+        status: stationRow.status || 'initiated',
+        selectedDigit: meta.selectedDigit ?? null,
+        interpretedResponse: meta.keypadLabel ?? null,
+        durationSeconds: stationRow.duration_seconds,
+        voice: meta.voice ?? null,
+        startedAt: stationRow.initiated_at || stationRow.requested_at,
+        answeredAt: stationRow.answered_at,
+        completedAt: stationRow.ended_at,
+        metadata: meta,
+      });
+      return dialed;
+    }
+
+    const terminal = ['completed', 'failed', 'rejected', 'busy', 'no_answer', 'cancelled'];
+    const status = stationRow.status || dialed.status;
+    return this.updateDialedCall(dialed.public_ref, {
+      providerCallId: stationRow.provider_call_id,
+      destinationMasked: stationRow.destination_masked,
+      didMasked: stationRow.did_masked,
+      status,
+      selectedDigit:
+        meta.selectedDigit !== undefined ? meta.selectedDigit : undefined,
+      interpretedResponse:
+        meta.keypadLabel !== undefined ? meta.keypadLabel : undefined,
+      durationSeconds: stationRow.duration_seconds,
+      voice: meta.voice ?? undefined,
+      answeredAt: stationRow.answered_at,
+      completedAt: terminal.includes(String(status).toLowerCase())
+        ? stationRow.ended_at || dialed.completed_at || now()
+        : stationRow.ended_at,
+      startedAt:
+        stationRow.initiated_at ||
+        stationRow.requested_at ||
+        dialed.started_at,
+      metadata: meta,
+    });
+  }
+
+  listDialedCalls({ search = '', status = '', digit = '' } = {}) {
+    let rows = this.db
+      .prepare('SELECT * FROM dialed_calls ORDER BY created_at DESC')
+      .all()
+      .map((row) => this.#mapDialedCall(row));
+
+    if (status) {
+      const s = String(status).toLowerCase();
+      rows = rows.filter((row) => String(row.status).toLowerCase() === s);
+    }
+    if (digit) {
+      rows = rows.filter((row) => String(row.selected_digit || '') === String(digit));
+    }
+    if (search) {
+      const q = String(search).toLowerCase();
+      rows = rows.filter(
+        (row) =>
+          String(row.public_ref || '').toLowerCase().includes(q) ||
+          String(row.destination_masked || '').toLowerCase().includes(q) ||
+          String(row.app_call_id || '').toLowerCase().includes(q) ||
+          String(row.interpreted_response || '').toLowerCase().includes(q),
+      );
     }
     return rows;
   }

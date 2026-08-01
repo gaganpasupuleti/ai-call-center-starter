@@ -410,7 +410,7 @@ export class CallStationTracker {
     durationSeconds,
   }) {
     const ts = nowIso();
-    return this.repository.createStreamTestCall({
+    const row = this.repository.createStreamTestCall({
       publicRef: `OB-${Date.now().toString(36)}`,
       appCallId: appCallId || null,
       status: 'initiated',
@@ -439,6 +439,27 @@ export class CallStationTracker {
         ttsDurationSeconds: durationSeconds ?? null,
       },
     });
+    // Explicit dialed_calls row (also synced from createStreamTestCall).
+    try {
+      this.repository.createDialedCall({
+        publicRef: row.public_ref,
+        appCallId: appCallId || null,
+        destinationMasked,
+        didMasked: maskPhone(this.config.didNumber),
+        status: 'initiated',
+        voice: voice || null,
+        durationSeconds: durationSeconds ?? null,
+        startedAt: ts,
+        metadata: {
+          source: 'outbound-dialer',
+          messageLength: Number(messageLength) || 0,
+          repeatCount: Number(repeatCount) || 1,
+        },
+      });
+    } catch {
+      // unique conflict if sync already created it
+    }
+    return row;
   }
 
   noteOutboundDialerResult(publicRef, { httpStatus, networkRequestMade, providerCallId }) {

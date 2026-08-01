@@ -129,10 +129,10 @@ async function renderDashboard() {
 
         <article class="cc-card cc-card-accent">
           <div class="cc-card-kicker">Operations</div>
-          <p class="cc-ops-copy">Place a call, then watch answer status and what the caller chose.</p>
+          <p class="cc-ops-copy">Place a call, then open Calls to see every dialed number in the database table.</p>
           <div class="cc-ops-actions">
             <a class="admin-btn primary" href="#/outbound">New call</a>
-            <a class="admin-btn ghost" href="#/call-station">Live calls</a>
+            <a class="admin-btn ghost" href="#/calls">Dialed calls</a>
           </div>
         </article>
 
@@ -151,13 +151,13 @@ async function renderDashboard() {
         <article class="cc-card cc-fill">
           <div class="cc-card-head">
             <div>
-              <div class="cc-card-kicker">Recent calls</div>
-              <h3>Dialed calls</h3>
+              <div class="cc-card-kicker">Campaign activity</div>
+              <h3>Recent campaign calls</h3>
             </div>
-            <a class="admin-btn ghost" href="#/calls">All dialed</a>
+            <a class="admin-btn ghost" href="#/calls">Open Calls</a>
           </div>
           <div class="cc-scroll">
-            ${renderRecentLiveCallsTable(data.recentCalls)}
+            ${renderCallsTable(data.recentCalls, { compact: true })}
           </div>
         </article>
 
@@ -634,32 +634,38 @@ async function renderCalls() {
   const query = new URLSearchParams();
   if (search) query.set('search', search);
   if (status) query.set('status', status);
-  const [calls, live] = await Promise.all([
+  const [calls, dialed] = await Promise.all([
     api(`/api/calls?${query}`),
-    api('/api/call-station/calls').catch(() => ({ items: [] })),
+    api(`/api/dialed-calls?${query}`).catch(() => ({ items: [] })),
   ]);
-  const liveMapped = (live.items || []).slice(0, 100);
+  const dialedItems = dialed.items?.length ? dialed.items : calls.dialedCalls || calls.items || [];
+  const dialedRows = dialedItems.map((row) => ({
+    id: row.public_ref || row.stationRef || row.id,
+    destinationMasked: row.destination_masked || row.phone || row.lead_name,
+    requestedAt: row.started_at || row.created_at,
+    durationSeconds: row.duration_seconds,
+    status: row.status,
+    pickupCode: row.pickupCode,
+    pickedUp: row.pickedUp,
+    keypadDigit: row.selected_digit,
+    keypadLabel: row.interpreted_response,
+    keypadOption: row.interpreted_response,
+  }));
   root.innerHTML = `
     <article class="card">
       <div class="card-header">
         <div>
           <h3>Dialed calls</h3>
-          <p>Every Outbound / Live Calls dial — answer status and what the caller chose</p>
+          <p>Stored in the <code>dialed_calls</code> database table — every Outbound dial</p>
         </div>
-        <a class="admin-btn ghost" href="#/call-station">Live monitor</a>
-      </div>
-      ${renderDialedCallsTable(liveMapped)}
-    </article>
-    <article class="card">
-      <div class="card-header">
-        <div><h3>Campaign call history</h3><p>Mock / campaign outcomes</p></div>
+        <a class="admin-btn ghost" href="#/outbound">New call</a>
       </div>
       <form id="call-filters" class="toolbar">
-        <label>Search<input name="search" value="${escapeHtml(search)}" placeholder="Lead, phone, campaign" /></label>
+        <label>Search<input name="search" value="${escapeHtml(search)}" placeholder="Call ID, number, choice" /></label>
         <label>Status
           <select name="status">
             <option value="">All</option>
-            ${['queued', 'initiated', 'ringing', 'answered', 'completed', 'busy', 'no_answer', 'failed']
+            ${['initiated', 'ringing', 'answered', 'streaming', 'completed', 'busy', 'no_answer', 'failed']
               .map(
                 (value) =>
                   `<option value="${value}" ${status === value ? 'selected' : ''}>${value}</option>`,
@@ -669,7 +675,13 @@ async function renderCalls() {
         </label>
         <button type="submit" class="secondary">Apply</button>
       </form>
-      ${renderCallsTable(calls.items, { mockControls: true })}
+      ${renderDialedCallsTable(dialedRows)}
+    </article>
+    <article class="card">
+      <div class="card-header">
+        <div><h3>Campaign call history</h3><p>Mock / campaign outcomes</p></div>
+      </div>
+      ${renderCallsTable(calls.campaignCalls || [], { mockControls: true })}
     </article>
   `;
 

@@ -144,6 +144,7 @@ export function createApp({
       pathname.startsWith('/api/leads') ||
       pathname.startsWith('/api/campaigns') ||
       pathname.startsWith('/api/calls') ||
+      pathname.startsWith('/api/dialed-calls') ||
       pathname.startsWith('/api/follow-ups')
     );
   }
@@ -245,50 +246,13 @@ export function createApp({
       if (request.method === 'GET' && pathname === '/api/dashboard') {
         const campaign = repository.getDashboardMetrics();
         const liveSummary = station.getSummary?.() || null;
-        const recentLive = (station.listCalls?.({}) || []).slice(0, 12);
+        const recentDialed = (repository.listDialedCalls?.({}) || []).slice(0, 12);
         return sendJson(response, 200, {
           ...campaign,
           liveCallStation: liveSummary,
-          recentLiveCalls: recentLive,
-          // Prefer real SmartPing / outbound dialer rows when present.
-          recentCalls:
-            recentLive.length > 0
-              ? recentLive.map((item) => ({
-                  id: item.id,
-                  lead_name: item.destinationMasked || 'Live stream',
-                  phone: item.destinationMasked || '—',
-                  campaign_name: String(item.id || '').startsWith('OB-')
-                    ? 'Outbound dialer'
-                    : 'Voice stream',
-                  status: String(item.status || 'unknown').toLowerCase(),
-                  pickup: item.pickup || null,
-                  pickupCode: item.pickupCode || null,
-                  pickedUp: item.pickedUp === true,
-                  selected_digit: item.keypadDigit ?? null,
-                  keypadDigit: item.keypadDigit ?? null,
-                  keypadLabel: item.keypadLabel ?? null,
-                  keypadOption: item.keypadOption ?? null,
-                  interpreted_response:
-                    item.keypadLabel ||
-                    item.pickup ||
-                    (item.durationSeconds != null
-                      ? `${item.durationSeconds}s audio`
-                      : item.timeline?.[item.timeline.length - 1]?.event || '—'),
-                  duration_seconds: item.durationSeconds,
-                  started_at:
-                    item.requestedAt ||
-                    item.initiatedAt ||
-                    item.answeredAt ||
-                    null,
-                  created_at:
-                    item.requestedAt ||
-                    item.initiatedAt ||
-                    item.answeredAt ||
-                    null,
-                  stationRef: item.id,
-                  source: 'call-station',
-                }))
-              : campaign.recentCalls,
+          recentDialedCalls: recentDialed,
+          // Dashboard keeps campaign recent calls; dialed rows live in dialed_calls table.
+          recentCalls: campaign.recentCalls,
         });
       }
 
@@ -914,11 +878,29 @@ export function createApp({
       }
 
       if (request.method === 'GET' && pathname === '/api/calls') {
+        const dialed = repository.listDialedCalls({
+          search: url.searchParams.get('search') ?? '',
+          status: url.searchParams.get('status') ?? '',
+          digit: url.searchParams.get('digit') ?? '',
+        });
+        const campaignCalls = repository.listCalls({
+          search: url.searchParams.get('search') ?? '',
+          status: url.searchParams.get('status') ?? '',
+          campaignId: url.searchParams.get('campaignId') ?? '',
+          digit: url.searchParams.get('digit') ?? '',
+        });
         return sendJson(response, 200, {
-          items: repository.listCalls({
+          items: dialed,
+          dialedCalls: dialed,
+          campaignCalls,
+        });
+      }
+
+      if (request.method === 'GET' && pathname === '/api/dialed-calls') {
+        return sendJson(response, 200, {
+          items: repository.listDialedCalls({
             search: url.searchParams.get('search') ?? '',
             status: url.searchParams.get('status') ?? '',
-            campaignId: url.searchParams.get('campaignId') ?? '',
             digit: url.searchParams.get('digit') ?? '',
           }),
         });
