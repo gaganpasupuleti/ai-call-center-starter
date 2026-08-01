@@ -225,6 +225,7 @@ export class Repository {
         interpreted_response TEXT,
         duration_seconds REAL,
         voice TEXT,
+        message_text TEXT,
         source TEXT NOT NULL DEFAULT 'outbound-dialer',
         answered_at TEXT,
         completed_at TEXT,
@@ -240,6 +241,7 @@ export class Repository {
     this.ensureColumn('calls', 'started_at', 'TEXT');
     this.ensureColumn('calls', 'answered_at', 'TEXT');
     this.ensureColumn('calls', 'completed_at', 'TEXT');
+    this.ensureColumn('dialed_calls', 'message_text', 'TEXT');
 
     this.db
       .prepare(
@@ -1646,6 +1648,8 @@ export class Repository {
       interpreted_response: row.interpreted_response,
       duration_seconds: row.duration_seconds,
       voice: row.voice,
+      message_text: row.message_text || null,
+      message: row.message_text || null,
       source: row.source || 'outbound-dialer',
       answered_at: row.answered_at,
       completed_at: row.completed_at,
@@ -1688,6 +1692,7 @@ export class Repository {
         interpretedResponse: input.interpretedResponse,
         durationSeconds: input.durationSeconds,
         voice: input.voice,
+        messageText: input.messageText,
         answeredAt: input.answeredAt,
         completedAt: input.completedAt,
         startedAt: input.startedAt,
@@ -1696,15 +1701,19 @@ export class Repository {
     }
     const id = input.id || randomUUID();
     const timestamp = now();
+    const messageText =
+      input.messageText != null
+        ? String(input.messageText).trim().slice(0, 500)
+        : null;
     this.db
       .prepare(`
         INSERT INTO dialed_calls (
           id, public_ref, app_call_id, provider_call_id,
           destination_masked, did_masked, status,
-          selected_digit, interpreted_response, duration_seconds, voice, source,
+          selected_digit, interpreted_response, duration_seconds, voice, message_text, source,
           answered_at, completed_at, started_at, metadata_json,
           created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `)
       .run(
         id,
@@ -1718,6 +1727,7 @@ export class Repository {
         input.interpretedResponse ?? null,
         input.durationSeconds ?? null,
         input.voice ?? null,
+        messageText,
         input.source ?? 'outbound-dialer',
         input.answeredAt ?? null,
         input.completedAt ?? null,
@@ -1762,6 +1772,7 @@ export class Repository {
           interpreted_response = ?,
           duration_seconds = ?,
           voice = ?,
+          message_text = ?,
           answered_at = ?,
           completed_at = ?,
           started_at = ?,
@@ -1784,6 +1795,11 @@ export class Repository {
           ? patch.durationSeconds
           : existing.duration_seconds,
         patch.voice ?? existing.voice,
+        patch.messageText !== undefined
+          ? patch.messageText == null
+            ? null
+            : String(patch.messageText).trim().slice(0, 500)
+          : existing.message_text,
         patch.answeredAt !== undefined
           ? patch.answeredAt
           : existing.answered_at,
@@ -1824,6 +1840,7 @@ export class Repository {
         interpretedResponse: meta.keypadLabel ?? null,
         durationSeconds: stationRow.duration_seconds,
         voice: meta.voice ?? null,
+        messageText: meta.messageText ?? null,
         startedAt: stationRow.initiated_at || stationRow.requested_at,
         answeredAt: stationRow.answered_at,
         completedAt: stationRow.ended_at,
@@ -1845,6 +1862,8 @@ export class Repository {
         meta.keypadLabel !== undefined ? meta.keypadLabel : undefined,
       durationSeconds: stationRow.duration_seconds,
       voice: meta.voice ?? undefined,
+      messageText:
+        meta.messageText !== undefined ? meta.messageText : undefined,
       answeredAt: stationRow.answered_at,
       completedAt: terminal.includes(String(status).toLowerCase())
         ? stationRow.ended_at || dialed.completed_at || now()
@@ -1877,7 +1896,8 @@ export class Repository {
           String(row.public_ref || '').toLowerCase().includes(q) ||
           String(row.destination_masked || '').toLowerCase().includes(q) ||
           String(row.app_call_id || '').toLowerCase().includes(q) ||
-          String(row.interpreted_response || '').toLowerCase().includes(q),
+          String(row.interpreted_response || '').toLowerCase().includes(q) ||
+          String(row.message_text || '').toLowerCase().includes(q),
       );
     }
     return rows;

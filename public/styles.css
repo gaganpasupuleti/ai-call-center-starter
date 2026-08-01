@@ -1034,16 +1034,13 @@ tbody tr:hover { background: #f8fafc; }
 .dialed-table tr.dialed-row:hover td {
   background: #f8fafc;
 }
-.dialed-open {
-  display: inline-flex;
-  align-items: center;
-  border: 1px solid #c7d2fe;
-  border-radius: 8px;
-  padding: 4px 10px;
-  font-size: 12px;
-  font-weight: 700;
-  color: #4338ca;
-  background: #eef2ff;
+.dialed-table td.dialed-message,
+.dialed-table .dialed-message {
+  max-width: 280px;
+  white-space: normal;
+  font-weight: 500;
+  color: #334155;
+  line-height: 1.35;
 }
 .cc-call-row {
   display: grid;

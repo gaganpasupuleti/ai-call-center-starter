@@ -405,11 +405,14 @@ export class CallStationTracker {
     appCallId,
     destinationMasked,
     messageLength,
+    messageText,
     repeatCount,
     voice,
     durationSeconds,
   }) {
     const ts = nowIso();
+    const trimmedMessage =
+      messageText != null ? String(messageText).trim().slice(0, 500) : null;
     const row = this.repository.createStreamTestCall({
       publicRef: `OB-${Date.now().toString(36)}`,
       appCallId: appCallId || null,
@@ -434,12 +437,12 @@ export class CallStationTracker {
         source: 'outbound-dialer',
         live: true,
         messageLength: Number(messageLength) || 0,
+        messageText: trimmedMessage,
         repeatCount: Number(repeatCount) || 1,
         voice: voice || null,
         ttsDurationSeconds: durationSeconds ?? null,
       },
     });
-    // Explicit dialed_calls row (also synced from createStreamTestCall).
     try {
       this.repository.createDialedCall({
         publicRef: row.public_ref,
@@ -448,11 +451,13 @@ export class CallStationTracker {
         didMasked: maskPhone(this.config.didNumber),
         status: 'initiated',
         voice: voice || null,
+        messageText: trimmedMessage,
         durationSeconds: durationSeconds ?? null,
         startedAt: ts,
         metadata: {
           source: 'outbound-dialer',
           messageLength: Number(messageLength) || 0,
+          messageText: trimmedMessage,
           repeatCount: Number(repeatCount) || 1,
         },
       });

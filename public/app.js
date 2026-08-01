@@ -188,6 +188,7 @@ function renderDialedCallsTable(items, { clickable = true } = {}) {
           <tr>
             <th>Call ID</th>
             <th>To</th>
+            <th>Message</th>
             <th>When</th>
             <th>Answered</th>
             <th>Status</th>
@@ -205,6 +206,11 @@ function renderDialedCallsTable(items, { clickable = true } = {}) {
                 row.phone ||
                 row.lead_name ||
                 '—';
+              const message =
+                row.message ||
+                row.message_text ||
+                row.messageText ||
+                '—';
               const when =
                 row.requestedAt ||
                 row.initiatedAt ||
@@ -219,6 +225,9 @@ function renderDialedCallsTable(items, { clickable = true } = {}) {
               return `<tr ${rowAttrs}>
                 <td class="mono">${escapeHtml(id)}</td>
                 <td>${escapeHtml(to)}</td>
+                <td class="dialed-message" title="${escapeHtml(message)}">${escapeHtml(
+                  message.length > 80 ? `${message.slice(0, 80)}…` : message,
+                )}</td>
                 <td>${escapeHtml(formatStationTime(when))}</td>
                 <td>${pickupBadge(row)}</td>
                 <td>${stationStatusBadge(row.status)}</td>
@@ -642,6 +651,8 @@ async function renderCalls() {
   const dialedRows = dialedItems.map((row) => ({
     id: row.public_ref || row.stationRef || row.id,
     destinationMasked: row.destination_masked || row.phone || row.lead_name,
+    message: row.message_text || row.message || null,
+    message_text: row.message_text || row.message || null,
     requestedAt: row.started_at || row.created_at,
     durationSeconds: row.duration_seconds,
     status: row.status,

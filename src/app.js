@@ -609,6 +609,7 @@ export function createApp({
             appCallId: prompt.appCallId,
             destinationMasked: phone.masked,
             messageLength: spokenText.length,
+            messageText: spokenText,
             repeatCount,
             voice: synthesized.voice,
             durationSeconds: synthesized.durationSeconds,
