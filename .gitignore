@@ -19,3 +19,6 @@ artifacts/
 *.key
 recordings/
 audio-dumps/
+**/.venv/
+**/__pycache__/
+services/speech-to-text/models/

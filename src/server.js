@@ -22,6 +22,7 @@ const sessionManager = new StreamSessionManager({
   config: config.smartPing,
   callStation,
   promptStore,
+  appConfig: config,
 });
 callStation.setSessionManager(sessionManager);
 const acceptingConnections = { current: true };

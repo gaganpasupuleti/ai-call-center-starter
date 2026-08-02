@@ -51,6 +51,16 @@ function normalizeVoiceResponseEngine(value) {
   return 'deterministic';
 }
 
+function normalizeVoiceSttProvider(value) {
+  const mode = String(value ?? 'mock').trim().toLowerCase();
+  if (mode === 'faster-whisper-streaming' || mode === 'faster_whisper_streaming') {
+    return 'faster-whisper-streaming';
+  }
+  if (mode === 'mock') return 'mock';
+  // Unknown values fall back to mock so production stays safe without the Python service.
+  return 'mock';
+}
+
 export function getConfig(overrides = {}) {
   const cwd = process.cwd();
   const host = overrides.host ?? process.env.HOST ?? '127.0.0.1';
@@ -184,6 +194,39 @@ export function getConfig(overrides = {}) {
     voiceResponseEngine: normalizeVoiceResponseEngine(
       overrides.voiceResponseEngine ?? process.env.VOICE_RESPONSE_ENGINE,
     ),
+    voiceSttProvider: normalizeVoiceSttProvider(
+      overrides.voiceSttProvider ?? process.env.VOICE_STT_PROVIDER,
+    ),
+    stt: {
+      streamUrl:
+        overrides.stt?.streamUrl ??
+        process.env.STT_STREAM_URL ??
+        'ws://127.0.0.1:8000/v1/stream',
+      connectTimeoutMs: Number(
+        overrides.stt?.connectTimeoutMs ??
+          process.env.STT_CONNECT_TIMEOUT_MS ??
+          5000,
+      ),
+      transcriptTimeoutMs: Number(
+        overrides.stt?.transcriptTimeoutMs ??
+          process.env.STT_TRANSCRIPT_TIMEOUT_MS ??
+          20000,
+      ),
+      defaultLanguage: String(
+        overrides.stt?.defaultLanguage ??
+          process.env.STT_DEFAULT_LANGUAGE ??
+          'en',
+      )
+        .trim()
+        .toLowerCase(),
+      maxPendingAudioBytes: Number(
+        overrides.stt?.maxPendingAudioBytes ??
+          process.env.STT_MAX_PENDING_AUDIO_BYTES ??
+          16000,
+      ),
+      serviceToken:
+        overrides.stt?.serviceToken ?? process.env.STT_SERVICE_TOKEN ?? '',
+    },
   };
 }
 
@@ -218,6 +261,8 @@ export function getPublicSettings(config, providerName) {
     streamSharedSecretConfigured: Boolean(config.smartPing.streamSharedSecret),
     aiProvider: config.voiceResponseEngine || 'deterministic',
     voiceResponseEngine: config.voiceResponseEngine || 'deterministic',
+    voiceSttProvider: config.voiceSttProvider || 'mock',
+    sttStreamUrlConfigured: Boolean(config.stt?.streamUrl),
     webhookAuthenticationConfigured: Boolean(config.webhookSecret),
     smartPingWebhookPath: config.smartPing.webhookPath,
     smartPingWebhookAuthMode: config.smartPing.webhookAuthMode,

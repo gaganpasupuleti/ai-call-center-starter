@@ -16,11 +16,25 @@ import {
 } from './fixed-audio.js';
 import { getOutboundPromptStore } from './outbound/prompt-store.js';
 import { englishLabelForDigit, formatTransferPhone } from './outbound/phone.js';
+import { StreamingSttManager } from './stt/streaming-stt-manager.js';
 
 const MESSAGE_END_HANGUP_MS = 10_000;
 
 function nowIso() {
   return new Date().toISOString();
+}
+
+function resolveSttLanguage(session, sttConfig = {}) {
+  const fromParams =
+    session?.customParameters?.language ||
+    session?.customParameters?.stt_language ||
+    session?.metadata?.sttLanguage;
+  const raw = String(fromParams || sttConfig.defaultLanguage || 'en')
+    .trim()
+    .toLowerCase();
+  if (raw === 'te' || raw === 'telugu') return 'te';
+  if (raw === 'auto') return 'auto';
+  return 'en';
 }
 
 export class StreamSessionManager {
@@ -30,12 +44,31 @@ export class StreamSessionManager {
     pipeline = new VoicePipeline(),
     callStation = null,
     promptStore = null,
+    sttManager = null,
+    appConfig = null,
   }) {
     this.repository = repository;
     this.config = config;
     this.pipeline = pipeline;
     this.callStation = callStation;
     this.promptStore = promptStore || getOutboundPromptStore();
+    this.appConfig = appConfig;
+    this.voiceSttProvider =
+      appConfig?.voiceSttProvider ||
+      config?.voiceSttProvider ||
+      'mock';
+    this.sttConfig = appConfig?.stt || config?.stt || {};
+    this.sttManager =
+      sttManager ||
+      (this.voiceSttProvider === 'faster-whisper-streaming'
+        ? new StreamingSttManager({
+            url: this.sttConfig.streamUrl,
+            token: this.sttConfig.serviceToken || '',
+            connectTimeoutMs: this.sttConfig.connectTimeoutMs,
+            transcriptTimeoutMs: this.sttConfig.transcriptTimeoutMs,
+            maxPendingAudioBytes: this.sttConfig.maxPendingAudioBytes,
+          })
+        : null);
     this.sessions = new Map();
     this.allSessions = new Set();
   }
@@ -171,6 +204,10 @@ export class StreamSessionManager {
       clearTimeout(session.failsafeHangupTimer);
       session.failsafeHangupTimer = null;
     }
+    const streamSid = session.streamSid;
+    if (streamSid && this.sttManager) {
+      this.sttManager.stopSession(streamSid).catch(() => {});
+    }
     session.queue?.stop();
     session.state = STREAM_STATES.closed;
     session.closedAt = nowIso();
@@ -194,6 +231,9 @@ export class StreamSessionManager {
   }
 
   closeAll(reason = 'shutdown') {
+    if (this.sttManager) {
+      this.sttManager.closeAll().catch(() => {});
+    }
     for (const session of [...this.allSessions]) {
       this.closeSession(session, reason);
     }
@@ -258,8 +298,158 @@ export class StreamSessionManager {
     const playback = this.#maybeEnqueueOutboundOrWelcome(session);
     if (!alreadyStarted) {
       this.callStation?.onStreamStarted?.(session, playback);
+      this.#maybeStartStreamingStt(session);
     }
     return { ok: true, stream: record, playback, duplicateStart: alreadyStarted };
+  }
+
+  #usesStreamingStt() {
+    return (
+      this.voiceSttProvider === 'faster-whisper-streaming' &&
+      this.sttManager != null
+    );
+  }
+
+  #maybeStartStreamingStt(session) {
+    if (!this.#usesStreamingStt()) return;
+    if (
+      isFixedWelcomeMode(this.config) ||
+      session.metadata.playbackMode === 'outbound-tts' ||
+      session.metadata.customAudioPlayed
+    ) {
+      session.metadata.sttStatus = 'skipped_playback_mode';
+      return;
+    }
+    const language = resolveSttLanguage(session, this.sttConfig);
+    session.metadata.sttLanguage = language;
+    session.metadata.sttStatus = 'connecting';
+    session.metadata.speechActive = false;
+    session.metadata.transcriptionActive = false;
+    const streamSid = session.streamSid;
+    this.sttManager
+      .startSession({
+        streamSid,
+        callSid: session.callSid,
+        language,
+        onTranscript: (event) => {
+          this.#onStreamingTranscript(session, event).catch(() => {});
+        },
+        onEvent: (event) => {
+          if (session.state === STREAM_STATES.closed) return;
+          if (event?.type === 'speech_started') {
+            session.metadata.speechActive = true;
+            session.metadata.sttStatus = 'speech';
+          } else if (event?.type === 'speech_ended') {
+            session.metadata.speechActive = false;
+            session.metadata.sttStatus = 'transcribing';
+          } else if (event?.type === 'ready') {
+            session.metadata.sttStatus = 'ready';
+          } else if (event?.type === 'no_speech') {
+            session.metadata.speechActive = false;
+            session.metadata.sttStatus = 'ready';
+          }
+        },
+        onError: (err) => {
+          if (session.state === STREAM_STATES.closed) return;
+          session.metadata.lastSttError = err?.code || 'stt_error';
+          session.metadata.sttStatus = 'error';
+        },
+      })
+      .then(() => {
+        if (session.state === STREAM_STATES.closed) return;
+        if (session.metadata.sttStatus === 'connecting') {
+          session.metadata.sttStatus = 'ready';
+        }
+      })
+      .catch((err) => {
+        if (session.state === STREAM_STATES.closed) return;
+        session.metadata.lastSttError = err?.code || 'stt_connect_failed';
+        session.metadata.sttStatus = 'error';
+      });
+  }
+
+  async #onStreamingTranscript(session, event) {
+    if (!session || session.state === STREAM_STATES.closed) return;
+    if (!event?.text) return;
+
+    // At most one in-flight transcript handler; keep a single pending slot.
+    if (session.metadata.transcriptionActive) {
+      if (!session.metadata.pendingTranscript) {
+        session.metadata.pendingTranscript = event;
+      }
+      return;
+    }
+
+    session.metadata.transcriptionActive = true;
+    session.metadata.sttStatus = 'responding';
+    session.metadata.lastTranscript = String(event.text).slice(0, 2000);
+    session.metadata.lastTranscriptLanguage = event.language || null;
+    session.metadata.lastTranscriptAt = nowIso();
+
+    try {
+      if (!session.metadata || typeof session.metadata !== 'object') {
+        session.metadata = {};
+      }
+      const result = await this.pipeline.handleTranscript(
+        {
+          text: event.text,
+          isFinal: true,
+          language: event.language,
+          languageProbability: event.languageProbability,
+          provider: event.provider || 'faster-whisper',
+          audioDurationMs: event.audioDurationMs,
+          inferenceDurationMs: event.inferenceDurationMs,
+        },
+        {
+          streamSid: session.streamSid,
+          callSid: session.callSid,
+          customParameters: session.customParameters,
+          metadata: session.metadata,
+        },
+      );
+      this.#applyPipelineResult(session, result);
+    } catch {
+      session.metadata.lastSttError = 'stt_response_failed';
+    } finally {
+      session.metadata.transcriptionActive = false;
+      session.metadata.sttStatus = 'ready';
+      const pending = session.metadata.pendingTranscript;
+      session.metadata.pendingTranscript = null;
+      if (pending && session.state !== STREAM_STATES.closed) {
+        await this.#onStreamingTranscript(session, pending);
+      }
+    }
+  }
+
+  #applyPipelineResult(session, result) {
+    if (!result) return;
+    if (result.reply) {
+      session.metadata.lastTranscript =
+        result.transcript?.text ?? session.metadata.lastTranscript;
+      session.metadata.lastIntent =
+        result.reply.intent ?? session.metadata.lastIntent;
+      if (result.reply.intentConfidence != null) {
+        session.metadata.lastIntentConfidence = result.reply.intentConfidence;
+      }
+      if (result.reply.nextState) {
+        session.metadata.conversationState = result.reply.nextState;
+      }
+      if (result.reply.replyText != null) {
+        session.metadata.lastReplyText = result.reply.replyText;
+      }
+      if (result.reply.language) {
+        session.metadata.detectedLanguage = result.reply.language;
+      }
+    }
+    if (result.audio) {
+      this.sendMedia(session, result.audio);
+      this.sendMark(session, `tts-${session.stats.mediaOut}`);
+    }
+    for (const action of result.actions ?? []) {
+      if (action.type === 'transfer_queue') {
+        this.transferToQueue(session, action.queue || 'default');
+      }
+    }
   }
 
   #maybeEnqueueOutboundOrWelcome(session) {
@@ -405,6 +595,13 @@ export class StreamSessionManager {
     if (!session.metadata || typeof session.metadata !== 'object') {
       session.metadata = {};
     }
+
+    // Streaming Faster-Whisper: forward μ-law and return without mock STT.
+    if (this.#usesStreamingStt()) {
+      this.sttManager.pushAudio(session.streamSid, event.payload);
+      return { ok: true, streamingStt: true };
+    }
+
     const result = await this.pipeline.handleInboundAudio(event.payload, {
       streamSid: session.streamSid,
       callSid: session.callSid,
@@ -412,35 +609,7 @@ export class StreamSessionManager {
       metadata: session.metadata,
     });
 
-    if (result.reply) {
-      session.metadata.lastTranscript =
-        result.transcript?.text ?? session.metadata.lastTranscript;
-      session.metadata.lastIntent =
-        result.reply.intent ?? session.metadata.lastIntent;
-      if (result.reply.intentConfidence != null) {
-        session.metadata.lastIntentConfidence = result.reply.intentConfidence;
-      }
-      if (result.reply.nextState) {
-        session.metadata.conversationState = result.reply.nextState;
-      }
-      if (result.reply.replyText != null) {
-        session.metadata.lastReplyText = result.reply.replyText;
-      }
-      if (result.reply.language) {
-        session.metadata.detectedLanguage = result.reply.language;
-      }
-    }
-
-    if (result.audio) {
-      this.sendMedia(session, result.audio);
-      this.sendMark(session, `tts-${session.stats.mediaOut}`);
-    }
-
-    for (const action of result.actions ?? []) {
-      if (action.type === 'transfer_queue') {
-        this.transferToQueue(session, action.queue || 'default');
-      }
-    }
+    this.#applyPipelineResult(session, result);
 
     return { ok: true, result };
   }

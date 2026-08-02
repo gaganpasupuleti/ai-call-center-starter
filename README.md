@@ -7,6 +7,7 @@ A provider-independent foundation for outbound IVR campaigns and future AI voice
 - **Phase 3A:** SmartPing VoiceStreaming protocol foundation + local simulator (still fail-closed; no real calls)
 - **Phase 3B:** Safe Railway public WebSocket exposure (`stream-only`) with temporary bearer auth
 - **Phase 4A:** deterministic multilingual response engine (English + Telugu phrases). No LLM or external decision API is required.
+- **Phase 4B:** self-hosted streaming STT (Silero VAD + Faster-Whisper) over a private WebSocket. Default remains `VOICE_STT_PROVIDER=mock`.
 
 The default configuration **never places a real telephone call**.
 
@@ -34,6 +35,7 @@ The default configuration **never places a real telephone call**.
 
 See [docs/SMARTPING_VOICE_STREAMING.md](docs/SMARTPING_VOICE_STREAMING.md).
 See [docs/DETERMINISTIC_RESPONSE_ENGINE.md](docs/DETERMINISTIC_RESPONSE_ENGINE.md) for Phase 4A.
+See [docs/PHASE_4B_STREAMING_STT.md](docs/PHASE_4B_STREAMING_STT.md) for Phase 4B.
 
 ### Live audio flow
 
