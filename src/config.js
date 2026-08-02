@@ -61,6 +61,27 @@ function normalizeVoiceSttProvider(value) {
   return 'mock';
 }
 
+function normalizeVoiceTtsProvider(value) {
+  const mode = String(value ?? 'mock').trim().toLowerCase();
+  if (mode === 'mock' || mode === 'kokoro' || mode === 'msedge') return mode;
+  if (mode === 'edge') return 'msedge';
+  if (mode === '' || mode == null) return 'mock';
+  throw new Error(
+    `Invalid VOICE_TTS_PROVIDER "${value}". Use mock, kokoro, or msedge.`,
+  );
+}
+
+function normalizeOutboundTtsProvider(value) {
+  const mode = String(value ?? 'msedge').trim().toLowerCase();
+  if (mode === 'inherit' || mode === 'mock' || mode === 'kokoro' || mode === 'msedge') {
+    return mode;
+  }
+  if (mode === 'edge') return 'msedge';
+  throw new Error(
+    `Invalid OUTBOUND_TTS_PROVIDER "${value}". Use inherit, mock, kokoro, or msedge.`,
+  );
+}
+
 export function getConfig(overrides = {}) {
   const cwd = process.cwd();
   const host = overrides.host ?? process.env.HOST ?? '127.0.0.1';
@@ -179,10 +200,11 @@ export function getConfig(overrides = {}) {
       ),
     },
     outbound: {
-      ttsProvider:
+      ttsProvider: normalizeOutboundTtsProvider(
         overrides.outbound?.ttsProvider ??
-        process.env.OUTBOUND_TTS_PROVIDER ??
-        'edge',
+          process.env.OUTBOUND_TTS_PROVIDER ??
+          'msedge',
+      ),
       ttsVoice:
         overrides.outbound?.ttsVoice ??
         process.env.OUTBOUND_TTS_VOICE ??
@@ -197,6 +219,87 @@ export function getConfig(overrides = {}) {
     voiceSttProvider: normalizeVoiceSttProvider(
       overrides.voiceSttProvider ?? process.env.VOICE_STT_PROVIDER,
     ),
+    voiceTtsProvider: normalizeVoiceTtsProvider(
+      overrides.voiceTtsProvider ?? process.env.VOICE_TTS_PROVIDER,
+    ),
+    kokoro: {
+      baseUrl:
+        overrides.kokoro?.baseUrl ??
+        process.env.KOKORO_BASE_URL ??
+        'http://127.0.0.1:8880',
+      model: overrides.kokoro?.model ?? process.env.KOKORO_MODEL ?? 'kokoro',
+      defaultVoice:
+        overrides.kokoro?.defaultVoice ??
+        process.env.KOKORO_DEFAULT_VOICE ??
+        'af_bella',
+      defaultSpeed: Number(
+        overrides.kokoro?.defaultSpeed ??
+          process.env.KOKORO_DEFAULT_SPEED ??
+          1.0,
+      ),
+      pcmSampleRate: Number(
+        overrides.kokoro?.pcmSampleRate ??
+          process.env.KOKORO_PCM_SAMPLE_RATE ??
+          24000,
+      ),
+    },
+    tts: {
+      connectTimeoutMs: Number(
+        overrides.tts?.connectTimeoutMs ??
+          process.env.TTS_CONNECT_TIMEOUT_MS ??
+          5000,
+      ),
+      requestTimeoutMs: Number(
+        overrides.tts?.requestTimeoutMs ??
+          process.env.TTS_REQUEST_TIMEOUT_MS ??
+          20000,
+      ),
+      maxTextChars: Number(
+        overrides.tts?.maxTextChars ?? process.env.TTS_MAX_TEXT_CHARS ?? 600,
+      ),
+      maxPcmBytes: Number(
+        overrides.tts?.maxPcmBytes ?? process.env.TTS_MAX_PCM_BYTES ?? 8_388_608,
+      ),
+      maxMulawBytes: Number(
+        overrides.tts?.maxMulawBytes ??
+          process.env.TTS_MAX_MULAW_BYTES ??
+          160000,
+      ),
+      maxConcurrentSynthesis: Number(
+        overrides.tts?.maxConcurrentSynthesis ??
+          process.env.TTS_MAX_CONCURRENT_SYNTHESIS ??
+          2,
+      ),
+      maxPendingRequests: Number(
+        overrides.tts?.maxPendingRequests ??
+          process.env.TTS_MAX_PENDING_REQUESTS ??
+          10,
+      ),
+      defaultSpeed: Number(
+        overrides.tts?.defaultSpeed ?? process.env.TTS_DEFAULT_SPEED ?? 1.0,
+      ),
+      minSpeed: Number(
+        overrides.tts?.minSpeed ?? process.env.TTS_MIN_SPEED ?? 0.75,
+      ),
+      maxSpeed: Number(
+        overrides.tts?.maxSpeed ?? process.env.TTS_MAX_SPEED ?? 1.25,
+      ),
+      cacheEnabled:
+        overrides.tts?.cacheEnabled ?? envFlag('TTS_CACHE_ENABLED', true),
+      cacheMaxEntries: Number(
+        overrides.tts?.cacheMaxEntries ??
+          process.env.TTS_CACHE_MAX_ENTRIES ??
+          100,
+      ),
+      cacheMaxBytes: Number(
+        overrides.tts?.cacheMaxBytes ??
+          process.env.TTS_CACHE_MAX_BYTES ??
+          52_428_800,
+      ),
+      cacheTtlMs: Number(
+        overrides.tts?.cacheTtlMs ?? process.env.TTS_CACHE_TTL_MS ?? 3_600_000,
+      ),
+    },
     stt: {
       streamUrl:
         overrides.stt?.streamUrl ??
@@ -262,6 +365,9 @@ export function getPublicSettings(config, providerName) {
     aiProvider: config.voiceResponseEngine || 'deterministic',
     voiceResponseEngine: config.voiceResponseEngine || 'deterministic',
     voiceSttProvider: config.voiceSttProvider || 'mock',
+    voiceTtsProvider: config.voiceTtsProvider || 'mock',
+    kokoroConfigured: Boolean(config.kokoro?.baseUrl),
+    kokoroDefaultVoice: config.kokoro?.defaultVoice || 'af_bella',
     sttStreamUrlConfigured: Boolean(config.stt?.streamUrl),
     webhookAuthenticationConfigured: Boolean(config.webhookSecret),
     smartPingWebhookPath: config.smartPing.webhookPath,

@@ -42,10 +42,11 @@ import {
 import { getOutboundPromptStore } from './streaming/outbound/prompt-store.js';
 import {
   getTtsHealth,
-  synthesizeToMulaw,
   TtsError,
   teluguVoiceNeedsTeluguScript,
 } from './streaming/tts/synthesize.js';
+import { synthesizeOutboundAudio } from './streaming/tts/tts-provider-factory.js';
+import { KokoroTextToSpeech } from './streaming/tts/kokoro-client.js';
 import {
   concatMulawWithRepeats,
   mulawToWavBase64,
@@ -296,6 +297,23 @@ export function createApp({
         const tts = getTtsHealth({
           voice: config.outbound?.ttsVoice,
         });
+        let kokoro = null;
+        if (config.voiceTtsProvider === 'kokoro' || config.outbound?.ttsProvider === 'kokoro') {
+          const client = new KokoroTextToSpeech({
+            baseUrl: config.kokoro?.baseUrl,
+            defaultVoice: config.kokoro?.defaultVoice,
+            connectTimeoutMs: Math.min(3000, config.tts?.connectTimeoutMs || 3000),
+          });
+          kokoro = await client.getHealth();
+        } else if (config.kokoro?.baseUrl) {
+          kokoro = {
+            provider: 'kokoro',
+            configured: true,
+            reachable: null,
+            defaultVoice: config.kokoro.defaultVoice,
+            language: 'en',
+          };
+        }
         const liveGatesOpen = outboundLiveReady();
         return sendJson(response, 200, {
           destinationMasked: maskPhone(process.env.SMARTPING_TEST_PHONE_NUMBER || ''),
@@ -313,7 +331,9 @@ export function createApp({
             : 'Set OUTBOUND_DIALER_LIVE=true in full mode with SmartPing credentials, or open classic live gates.',
           streamUrlConfigured: Boolean(config.smartPing?.streamUrlConfigured),
           playbackMode: config.smartPing?.playbackMode || 'pipeline',
+          voiceTtsProvider: config.voiceTtsProvider || 'mock',
           tts,
+          kokoro,
           voiceOptions: OUTBOUND_VOICE_OPTIONS,
           languageOptions: OUTBOUND_LANGUAGE_OPTIONS,
           defaultVoice: config.outbound?.ttsVoice || 'en-IN-NeerjaNeural',
@@ -378,11 +398,16 @@ export function createApp({
           ttsReady: getTtsHealth().ready,
         };
         try {
-          const synthesized = await synthesizeToMulaw(message.text, {
-            voice: voicePick.voice,
-            requireMatchingScript: true,
-          });
-          if (synthesized.voice !== voicePick.voice) {
+          const synthesized = await synthesizeOutboundAudio(
+            message.text,
+            {
+              voice: voicePick.voice,
+              requireMatchingScript: true,
+              language: voicePick.voice?.startsWith('te') ? 'te' : 'en',
+            },
+            config,
+          );
+          if (synthesized.voice !== voicePick.voice && synthesized.provider === 'msedge') {
             return sendJson(response, 500, {
               error: 'Synthesized voice did not match the selected voice',
               code: 'tts_voice_mismatch',
@@ -414,9 +439,9 @@ export function createApp({
             preview: previewAudio,
           };
         } catch (error) {
-          const code = error instanceof TtsError ? error.code : 'tts_error';
+          const code = error instanceof TtsError ? error.code : error?.code || 'tts_error';
           const status =
-            error instanceof TtsError ? error.statusCode || 500 : 500;
+            error instanceof TtsError ? error.statusCode || 500 : error?.statusCode || 500;
           if (
             code === 'tts_invalid_voice' ||
             code === 'tts_voice_mismatch' ||
@@ -545,10 +570,15 @@ export function createApp({
 
         let synthesized;
         try {
-          synthesized = await synthesizeToMulaw(spokenText, {
-            voice: voicePick.voice,
-            requireMatchingScript: true,
-          });
+          synthesized = await synthesizeOutboundAudio(
+            spokenText,
+            {
+              voice: voicePick.voice,
+              requireMatchingScript: true,
+              language: voicePick.voice?.startsWith('te') ? 'te' : 'en',
+            },
+            config,
+          );
         } catch (error) {
           const status = error?.statusCode || 500;
           return sendJson(response, status, {
@@ -556,7 +586,10 @@ export function createApp({
             code: error?.code || 'tts_error',
           });
         }
-        if (synthesized.voice !== voicePick.voice) {
+        if (
+          synthesized.provider === 'msedge' &&
+          synthesized.voice !== voicePick.voice
+        ) {
           return sendJson(response, 500, {
             error: 'Synthesized voice did not match the selected voice',
             code: 'tts_voice_mismatch',
@@ -569,10 +602,15 @@ export function createApp({
         if (interactivePick.interactive) {
           try {
             for (const [digit, text] of Object.entries(interactivePick.menu)) {
-              const clip = await synthesizeToMulaw(text, {
-                voice: voicePick.voice,
-                requireMatchingScript: true,
-              });
+              const clip = await synthesizeOutboundAudio(
+                text,
+                {
+                  voice: voicePick.voice,
+                  requireMatchingScript: true,
+                  language: voicePick.voice?.startsWith('te') ? 'te' : 'en',
+                },
+                config,
+              );
               responseAudio[digit] = {
                 text,
                 bytes: clip.bytes,

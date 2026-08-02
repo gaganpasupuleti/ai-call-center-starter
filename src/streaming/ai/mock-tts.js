@@ -12,15 +12,21 @@ function synthesizeMockMulaw(text) {
 }
 
 export class MockTextToSpeech extends TextToSpeechProvider {
-  async synthesize({ text }) {
+  async synthesize({ text, language = 'en', voice = 'mock' } = {}) {
+    const audio = synthesizeMockMulaw(text);
     return {
-      audio: synthesizeMockMulaw(text),
+      audio,
       format: {
-        encoding: AUDIO.encoding,
+        encoding: 'mulaw',
         sampleRate: AUDIO.sampleRate,
         channels: AUDIO.channels,
       },
       provider: 'mock-tts',
+      voice,
+      language: language === 'te' ? 'te' : 'en',
+      durationSeconds: Number((audio.length / AUDIO.sampleRate).toFixed(3)),
+      synthesisDurationMs: 1,
+      cached: false,
     };
   }
 }

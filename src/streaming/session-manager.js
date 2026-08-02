@@ -441,6 +441,20 @@ export class StreamSessionManager {
         session.metadata.detectedLanguage = result.reply.language;
       }
     }
+    if (result.tts) {
+      session.metadata.ttsProvider = result.tts.provider;
+      session.metadata.ttsVoice = result.tts.voice;
+      session.metadata.ttsLanguage = result.tts.language;
+      session.metadata.ttsCached = result.tts.cached === true;
+      session.metadata.ttsDurationSeconds = result.tts.durationSeconds;
+      session.metadata.ttsSynthesisDurationMs = result.tts.synthesisDurationMs;
+      session.metadata.ttsStatus = 'ok';
+      session.metadata.lastTtsError = null;
+    }
+    if (result.ttsError) {
+      session.metadata.lastTtsError = result.ttsError.code;
+      session.metadata.ttsStatus = 'error';
+    }
     if (result.audio) {
       this.sendMedia(session, result.audio);
       this.sendMark(session, `tts-${session.stats.mediaOut}`);

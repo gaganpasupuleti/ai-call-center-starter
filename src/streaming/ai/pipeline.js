@@ -2,6 +2,9 @@ import { MockSpeechToText } from './mock-stt.js';
 import { MockConversationAgent } from './mock-agent.js';
 import { MockTextToSpeech } from './mock-tts.js';
 import { AdmissionsResponseEngine } from '../response/response-engine.js';
+import { createTextToSpeechProvider } from '../tts/tts-provider-factory.js';
+import { KOKORO_DEFAULT_VOICE } from '../tts/kokoro-voices.js';
+import { TtsProviderError } from '../tts/errors.js';
 
 /**
  * Resolve conversation agent from VOICE_RESPONSE_ENGINE.
@@ -25,11 +28,18 @@ export class VoicePipeline {
   constructor({
     stt = new MockSpeechToText(),
     agent = createConversationAgent(),
-    tts = new MockTextToSpeech(),
+    tts = null,
+    ttsConfig = null,
+    defaultVoice = null,
   } = {}) {
     this.stt = stt;
     this.agent = agent;
-    this.tts = tts;
+    this.tts =
+      tts ||
+      (ttsConfig
+        ? createTextToSpeechProvider(ttsConfig)
+        : new MockTextToSpeech());
+    this.defaultVoice = defaultVoice;
     this.providerName =
       agent instanceof MockConversationAgent
         ? 'mock'
@@ -53,13 +63,53 @@ export class VoicePipeline {
       return { transcript: normalized, reply: null, audio: null, actions: [] };
     }
     const reply = await this.agent.respond({ text: normalized.text, session });
-    const speech = await this.tts.synthesize({ text: reply.replyText });
+    const language = reply.language || normalized.language || 'en';
+    const voice =
+      session?.metadata?.ttsVoice ||
+      this.defaultVoice ||
+      (language === 'en' ? KOKORO_DEFAULT_VOICE : undefined);
+
+    let speech = null;
+    let ttsError = null;
+    try {
+      speech = await this.tts.synthesize({
+        text: reply.replyText,
+        language,
+        voice,
+        metadata: {
+          streamSid: session?.streamSid || null,
+          callSid: session?.callSid || null,
+          sessionClosed: session?.state === 'closed',
+        },
+      });
+    } catch (err) {
+      ttsError = {
+        code:
+          err instanceof TtsProviderError
+            ? err.code
+            : err?.code || 'tts_error',
+        message: 'TTS synthesis failed',
+        retryable: err?.retryable === true,
+      };
+    }
+
     return {
       transcript: normalized,
       reply,
-      audio: speech.audio,
-      format: speech.format,
+      audio: speech?.audio ?? null,
+      format: speech?.format ?? null,
       actions: reply.actions ?? [],
+      tts: speech
+        ? {
+            provider: speech.provider,
+            voice: speech.voice,
+            language: speech.language,
+            cached: speech.cached === true,
+            durationSeconds: speech.durationSeconds,
+            synthesisDurationMs: speech.synthesisDurationMs,
+          }
+        : null,
+      ttsError,
     };
   }
 }
