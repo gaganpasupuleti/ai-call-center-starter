@@ -349,11 +349,12 @@ test('dashboard metrics calculate correctly with empty-safe rates', async () => 
       body: JSON.stringify({ confirm: true }),
     });
     const calls = await request(baseUrl, '/api/calls');
-    await request(baseUrl, `/api/mock/calls/${calls.body.items[0].id}/events`, {
+    const campaignItems = calls.body.campaignCalls || calls.body.items;
+    await request(baseUrl, `/api/mock/calls/${campaignItems[0].id}/events`, {
       method: 'POST',
       body: JSON.stringify({ status: 'completed', selectedDigit: '1', durationSeconds: 20 }),
     });
-    await request(baseUrl, `/api/mock/calls/${calls.body.items[1].id}/events`, {
+    await request(baseUrl, `/api/mock/calls/${campaignItems[1].id}/events`, {
       method: 'POST',
       body: JSON.stringify({ status: 'no_answer' }),
     });

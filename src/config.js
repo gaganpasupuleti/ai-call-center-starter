@@ -43,6 +43,14 @@ function normalizePlaybackMode(value) {
   return 'pipeline';
 }
 
+function normalizeVoiceResponseEngine(value) {
+  const mode = String(value ?? 'deterministic').trim().toLowerCase();
+  if (mode === 'mock') return 'mock';
+  if (mode === 'deterministic') return 'deterministic';
+  // Unknown values fall back to deterministic (safe default).
+  return 'deterministic';
+}
+
 export function getConfig(overrides = {}) {
   const cwd = process.cwd();
   const host = overrides.host ?? process.env.HOST ?? '127.0.0.1';
@@ -173,6 +181,9 @@ export function getConfig(overrides = {}) {
         overrides.outbound?.dialerLive ??
         envFlag('OUTBOUND_DIALER_LIVE', false),
     },
+    voiceResponseEngine: normalizeVoiceResponseEngine(
+      overrides.voiceResponseEngine ?? process.env.VOICE_RESPONSE_ENGINE,
+    ),
   };
 }
 
@@ -205,7 +216,8 @@ export function getPublicSettings(config, providerName) {
     streamAuthProviderCompatible:
       config.smartPing.streamAuthMode === 'provider-compatible',
     streamSharedSecretConfigured: Boolean(config.smartPing.streamSharedSecret),
-    aiProvider: 'mock',
+    aiProvider: config.voiceResponseEngine || 'deterministic',
+    voiceResponseEngine: config.voiceResponseEngine || 'deterministic',
     webhookAuthenticationConfigured: Boolean(config.webhookSecret),
     smartPingWebhookPath: config.smartPing.webhookPath,
     smartPingWebhookAuthMode: config.smartPing.webhookAuthMode,

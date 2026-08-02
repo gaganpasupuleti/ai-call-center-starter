@@ -6,6 +6,7 @@ A provider-independent foundation for outbound IVR campaigns and future AI voice
 - **Phase 2:** outbound call-centre MVP (`CALL_PROVIDER=mock`)
 - **Phase 3A:** SmartPing VoiceStreaming protocol foundation + local simulator (still fail-closed; no real calls)
 - **Phase 3B:** Safe Railway public WebSocket exposure (`stream-only`) with temporary bearer auth
+- **Phase 4A:** deterministic multilingual response engine (English + Telugu phrases). No LLM or external decision API is required.
 
 The default configuration **never places a real telephone call**.
 
@@ -26,12 +27,13 @@ The default configuration **never places a real telephone call**.
 - Normalized handling for `connected`, `start`, `media`, `mark`, `stop`
 - Paced μ-law media output (160-byte / 20 ms chunks)
 - Outbound commands: media, mark, clear, hangupCall, queue/external transfer
-- Mock STT → mock AI agent → mock TTS pipeline (no external AI providers)
+- Mock STT → deterministic response engine (or mock agent) → mock TTS pipeline (no LLM / external AI APIs)
 - Dry-run SmartPing outbound request builder with token redaction
 - Local SmartPing stream simulator
 - Provider Settings streaming status flags (no secrets)
 
 See [docs/SMARTPING_VOICE_STREAMING.md](docs/SMARTPING_VOICE_STREAMING.md).
+See [docs/DETERMINISTIC_RESPONSE_ENGINE.md](docs/DETERMINISTIC_RESPONSE_ENGINE.md) for Phase 4A.
 
 ### Live audio flow
 

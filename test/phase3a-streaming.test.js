@@ -356,7 +356,8 @@ test('connected/start/media/mark/stop, duplicates, commands, cleanup, no secret 
     assert.ok(events.every((event) => event.raw_audio_b64 === null));
 
     const settings = await (await fetch(`${baseUrl}/api/settings`)).json();
-    assert.equal(settings.aiProvider, 'mock');
+    assert.equal(settings.aiProvider, 'deterministic');
+    assert.equal(settings.voiceResponseEngine, 'deterministic');
     assert.equal(settings.dryRunEnabled, true);
     assert.equal(settings.liveCallsDisabled, true);
     assert.equal(settings.streamingConfigured, true);

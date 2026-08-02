@@ -1,6 +1,22 @@
 import { MockSpeechToText } from './mock-stt.js';
 import { MockConversationAgent } from './mock-agent.js';
 import { MockTextToSpeech } from './mock-tts.js';
+import { AdmissionsResponseEngine } from '../response/response-engine.js';
+
+/**
+ * Resolve conversation agent from VOICE_RESPONSE_ENGINE.
+ * Supported: deterministic (default), mock.
+ */
+export function createConversationAgent(engineName) {
+  const mode = String(engineName ?? process.env.VOICE_RESPONSE_ENGINE ?? 'deterministic')
+    .trim()
+    .toLowerCase();
+  if (mode === 'mock') {
+    return new MockConversationAgent();
+  }
+  // Unknown values fall back to deterministic (safe default).
+  return new AdmissionsResponseEngine();
+}
 
 /**
  * Provider-independent orchestration:
@@ -9,13 +25,18 @@ import { MockTextToSpeech } from './mock-tts.js';
 export class VoicePipeline {
   constructor({
     stt = new MockSpeechToText(),
-    agent = new MockConversationAgent(),
+    agent = createConversationAgent(),
     tts = new MockTextToSpeech(),
   } = {}) {
     this.stt = stt;
     this.agent = agent;
     this.tts = tts;
-    this.providerName = 'mock';
+    this.providerName =
+      agent instanceof MockConversationAgent
+        ? 'mock'
+        : agent instanceof AdmissionsResponseEngine
+          ? 'deterministic'
+          : 'custom';
   }
 
   async handleInboundAudio(audio, session = {}) {

@@ -1,0 +1,203 @@
+/**
+ * Telugu + transliterated intent phrases (configuration-driven).
+ */
+
+export const INTENT_PRIORITY_TE = [
+  'DO_NOT_CALL',
+  'NOT_INTERESTED',
+  'HUMAN_AGENT',
+  'CALLBACK',
+  'CALLBACK_TIME',
+  'BOOK_DEMO',
+  'SEND_DETAILS',
+  'INTERESTED',
+  'ASK_PRICE',
+  'ASK_COURSE',
+  'ASK_DURATION',
+  'YES',
+  'NO',
+  'REPEAT',
+  'UNKNOWN',
+];
+
+export const INTENTS_TE = {
+  DO_NOT_CALL: {
+    phrases: [
+      '\u0C2E\u0C33\u0C4D\u0C32\u0C40 \u0C15\u0C3E\u0C32\u0C4D \u0C1A\u0C47\u0C2F\u0C35\u0C26\u0C4D\u0C26\u0C41',
+      'malli call cheyakandi',
+      'malli call cheyavaddu',
+      'call cheyakandi',
+      'number remove cheyandi',
+    ],
+    requiredKeywords: [
+      ['\u0C2E\u0C33\u0C4D\u0C32\u0C40', '\u0C15\u0C3E\u0C32\u0C4D'],
+      ['malli', 'call'],
+      ['cheyakandi'],
+      ['cheyavaddu'],
+    ],
+    optionalKeywords: ['number', 'remove'],
+  },
+  NOT_INTERESTED: {
+    phrases: [
+      '\u0C06\u0C38\u0C15\u0C4D\u0C24\u0C3F \u0C32\u0C47\u0C26\u0C41',
+      'interest ledu',
+      'naku interest ledu',
+      'vaddu',
+    ],
+    requiredKeywords: [
+      ['\u0C06\u0C38\u0C15\u0C4D\u0C24\u0C3F', '\u0C32\u0C47\u0C26\u0C41'],
+      ['interest', 'ledu'],
+      ['vaddu'],
+    ],
+    optionalKeywords: ['naku'],
+    negationOf: ['INTERESTED'],
+  },
+  HUMAN_AGENT: {
+    phrases: [
+      '\u0C0F\u0C1C\u0C46\u0C02\u0C1F\u0C4D\u200C\u0C24\u0C4B \u0C2E\u0C3E\u0C1F\u0C4D\u0C32\u0C3E\u0C21\u0C3E\u0C32\u0C3F',
+      'agent tho matladali',
+      'agent ki connect cheyandi',
+      'counsellor tho matladali',
+    ],
+    requiredKeywords: [
+      ['\u0C0F\u0C1C\u0C46\u0C02\u0C1F\u0C4D'],
+      ['agent'],
+      ['counsellor'],
+      ['matladali'],
+    ],
+    optionalKeywords: ['tho', 'connect'],
+  },
+  CALLBACK: {
+    phrases: [
+      '\u0C30\u0C47\u0C2A\u0C41 \u0C15\u0C3E\u0C32\u0C4D \u0C1A\u0C47\u0C2F\u0C02\u0C21\u0C3F',
+      '\u0C24\u0C30\u0C4D\u0C35\u0C3E\u0C24 \u0C15\u0C3E\u0C32\u0C4D \u0C1A\u0C47\u0C2F\u0C02\u0C21\u0C3F',
+      'repu call cheyandi',
+      'tarvata call cheyandi',
+      'later call cheyandi',
+      'busy unnanu',
+    ],
+    requiredKeywords: [
+      ['\u0C30\u0C47\u0C2A\u0C41', '\u0C15\u0C3E\u0C32\u0C4D'],
+      ['\u0C24\u0C30\u0C4D\u0C35\u0C3E\u0C24', '\u0C15\u0C3E\u0C32\u0C4D'],
+      ['repu', 'call'],
+      ['tarvata', 'call'],
+      ['later', 'call'],
+      ['busy'],
+    ],
+    optionalKeywords: ['cheyandi'],
+  },
+  CALLBACK_TIME: {
+    phrases: [
+      '\u0C38\u0C3E\u0C2F\u0C02\u0C24\u0C4D\u0C30\u0C02',
+      '\u0C09\u0C26\u0C2F\u0C02',
+      'sayankalam',
+      'udayam',
+      'repu sayankalam',
+    ],
+    requiredKeywords: [
+      ['\u0C38\u0C3E\u0C2F\u0C02\u0C24\u0C4D\u0C30\u0C02'],
+      ['\u0C09\u0C26\u0C2F\u0C02'],
+      ['sayankalam'],
+      ['udayam'],
+      ['repu'],
+    ],
+    optionalKeywords: [],
+    stateOnly: ['waiting_for_callback_time', 'waiting_for_demo_date'],
+  },
+  BOOK_DEMO: {
+    phrases: [
+      '\u0C21\u0C46\u0C2E\u0C4B \u0C2C\u0C41\u0C15\u0C4D \u0C1A\u0C47\u0C2F\u0C02\u0C21\u0C3F',
+      'demo book cheyandi',
+      'demo kavali',
+      'demo schedule cheyandi',
+    ],
+    requiredKeywords: [['\u0C21\u0C46\u0C2E\u0C4B'], ['demo']],
+    optionalKeywords: ['book', 'kavali', 'schedule', '\u0C2C\u0C41\u0C15\u0C4D'],
+  },
+  SEND_DETAILS: {
+    phrases: [
+      '\u0C35\u0C3F\u0C35\u0C30\u0C3E\u0C32\u0C41 \u0C2A\u0C02\u0C2A\u0C02\u0C21\u0C3F',
+      '\u0C35\u0C3E\u0C1F\u0C4D\u0C38\u0C3E\u0C2A\u0C4D \u0C1A\u0C47\u0C2F\u0C02\u0C21\u0C3F',
+      'details pampandi',
+      'whatsapp cheyandi',
+      'vivaralu pampandi',
+    ],
+    requiredKeywords: [
+      ['\u0C35\u0C3F\u0C35\u0C30\u0C3E\u0C32\u0C41'],
+      ['\u0C35\u0C3E\u0C1F\u0C4D\u0C38\u0C3E\u0C2A\u0C4D'],
+      ['details', 'pampandi'],
+      ['whatsapp'],
+      ['vivaralu'],
+    ],
+    optionalKeywords: ['pampandi', 'cheyandi'],
+  },
+  INTERESTED: {
+    phrases: [
+      '\u0C28\u0C3E\u0C15\u0C41 \u0C06\u0C38\u0C15\u0C4D\u0C24\u0C3F \u0C09\u0C02\u0C26\u0C3F',
+      'naku interest undi',
+      'interest undi',
+      'naku kavali',
+    ],
+    requiredKeywords: [
+      ['\u0C06\u0C38\u0C15\u0C4D\u0C24\u0C3F', '\u0C09\u0C02\u0C26\u0C3F'],
+      ['interest', 'undi'],
+      ['naku', 'kavali'],
+    ],
+    optionalKeywords: ['naku'],
+  },
+  ASK_PRICE: {
+    phrases: [
+      '\u0C2B\u0C40\u0C1C\u0C41 \u0C0E\u0C02\u0C24',
+      'fee entha',
+      'fees entha',
+      'price entha',
+    ],
+    requiredKeywords: [['\u0C2B\u0C40\u0C1C\u0C41'], ['fee'], ['fees'], ['price'], ['entha']],
+    optionalKeywords: [],
+  },
+  ASK_COURSE: {
+    phrases: [
+      '\u0C15\u0C4B\u0C30\u0C4D\u0C38\u0C41 \u0C17\u0C41\u0C30\u0C3F\u0C02\u0C1A\u0C3F',
+      'course gurinchi',
+      'course details',
+    ],
+    requiredKeywords: [['\u0C15\u0C4B\u0C30\u0C4D\u0C38\u0C41'], ['course']],
+    optionalKeywords: ['details', 'gurinchi'],
+  },
+  ASK_DURATION: {
+    phrases: [
+      '\u0C15\u0C4B\u0C30\u0C4D\u0C38\u0C41 \u0C0E\u0C02\u0C24 \u0C15\u0C3E\u0C32\u0C02',
+      'course entha kalam',
+      'duration entha',
+    ],
+    requiredKeywords: [
+      ['\u0C15\u0C3E\u0C32\u0C02'],
+      ['kalam'],
+      ['duration'],
+    ],
+    optionalKeywords: ['course', 'entha'],
+  },
+  YES: {
+    phrases: ['\u0C05\u0C35\u0C41\u0C28\u0C41', 'avunu', 'yes', 'sare'],
+    requiredKeywords: [['\u0C05\u0C35\u0C41\u0C28\u0C41'], ['avunu'], ['yes'], ['sare']],
+    optionalKeywords: [],
+  },
+  NO: {
+    phrases: ['\u0C15\u0C3E\u0C26\u0C41', 'kadu', 'no', 'vaddu'],
+    requiredKeywords: [['\u0C15\u0C3E\u0C26\u0C41'], ['kadu'], ['no']],
+    optionalKeywords: [],
+  },
+  REPEAT: {
+    phrases: [
+      '\u0C2E\u0C33\u0C4D\u0C32\u0C40 \u0C1A\u0C46\u0C2A\u0C4D\u0C2A\u0C02\u0C21\u0C3F',
+      'malli cheppandi',
+      'repeat cheyandi',
+    ],
+    requiredKeywords: [
+      ['\u0C2E\u0C33\u0C4D\u0C32\u0C40', '\u0C1A\u0C46\u0C2A\u0C4D\u0C2A\u0C02\u0C21\u0C3F'],
+      ['malli', 'cheppandi'],
+      ['repeat'],
+    ],
+    optionalKeywords: [],
+  },
+};

@@ -401,11 +401,35 @@ export class StreamSessionManager {
       };
     }
 
+    // Pass real session.metadata so conversation state stays per-call (not a copy).
+    if (!session.metadata || typeof session.metadata !== 'object') {
+      session.metadata = {};
+    }
     const result = await this.pipeline.handleInboundAudio(event.payload, {
       streamSid: session.streamSid,
       callSid: session.callSid,
       customParameters: session.customParameters,
+      metadata: session.metadata,
     });
+
+    if (result.reply) {
+      session.metadata.lastTranscript =
+        result.transcript?.text ?? session.metadata.lastTranscript;
+      session.metadata.lastIntent =
+        result.reply.intent ?? session.metadata.lastIntent;
+      if (result.reply.intentConfidence != null) {
+        session.metadata.lastIntentConfidence = result.reply.intentConfidence;
+      }
+      if (result.reply.nextState) {
+        session.metadata.conversationState = result.reply.nextState;
+      }
+      if (result.reply.replyText != null) {
+        session.metadata.lastReplyText = result.reply.replyText;
+      }
+      if (result.reply.language) {
+        session.metadata.detectedLanguage = result.reply.language;
+      }
+    }
 
     if (result.audio) {
       this.sendMedia(session, result.audio);
