@@ -202,8 +202,10 @@ function renderDialedCallsTable(items, { clickable = true } = {}) {
             .map((row) => {
               const id = row.id || row.stationRef || '—';
               const to =
-                row.destinationMasked ||
+                row.destinationPhone ||
+                row.destination_phone ||
                 row.phone ||
+                row.destinationMasked ||
                 row.lead_name ||
                 '—';
               const message =
@@ -650,7 +652,10 @@ async function renderCalls() {
   const dialedItems = dialed.items?.length ? dialed.items : calls.dialedCalls || calls.items || [];
   const dialedRows = dialedItems.map((row) => ({
     id: row.public_ref || row.stationRef || row.id,
+    destinationPhone: row.destination_phone || row.phone || null,
+    destination_phone: row.destination_phone || null,
     destinationMasked: row.destination_masked || row.phone || row.lead_name,
+    phone: row.destination_phone || row.phone || row.destination_masked,
     message: row.message_text || row.message || null,
     message_text: row.message_text || row.message || null,
     requestedAt: row.started_at || row.created_at,

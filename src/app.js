@@ -608,6 +608,7 @@ export function createApp({
           stationRow = station.recordOutboundDialerCall?.({
             appCallId: prompt.appCallId,
             destinationMasked: phone.masked,
+            destinationPhone: phone.phone,
             messageLength: spokenText.length,
             messageText: spokenText,
             repeatCount,

@@ -219,6 +219,7 @@ export class Repository {
         app_call_id TEXT,
         provider_call_id TEXT,
         destination_masked TEXT,
+        destination_phone TEXT,
         did_masked TEXT,
         status TEXT NOT NULL,
         selected_digit TEXT,
@@ -242,6 +243,7 @@ export class Repository {
     this.ensureColumn('calls', 'answered_at', 'TEXT');
     this.ensureColumn('calls', 'completed_at', 'TEXT');
     this.ensureColumn('dialed_calls', 'message_text', 'TEXT');
+    this.ensureColumn('dialed_calls', 'destination_phone', 'TEXT');
 
     this.db
       .prepare(
@@ -1642,6 +1644,8 @@ export class Repository {
       app_call_id: row.app_call_id,
       provider_call_id: row.provider_call_id,
       destination_masked: row.destination_masked,
+      destination_phone: row.destination_phone || null,
+      phone: row.destination_phone || row.destination_masked || '—',
       did_masked: row.did_masked,
       status: row.status,
       selected_digit: row.selected_digit,
@@ -1658,8 +1662,7 @@ export class Repository {
       updated_at: row.updated_at,
       metadata: parseJson(row.metadata_json, {}),
       // Shape compatible with Calls UI /api/calls items
-      lead_name: row.destination_masked || 'Outbound',
-      phone: row.destination_masked || '—',
+      lead_name: row.destination_phone || row.destination_masked || 'Outbound',
       campaign_name: 'Outbound dialer',
       stationRef: row.public_ref,
       pickupCode: row.answered_at
@@ -1686,6 +1689,7 @@ export class Repository {
         appCallId: input.appCallId,
         providerCallId: input.providerCallId,
         destinationMasked: input.destinationMasked,
+        destinationPhone: input.destinationPhone,
         didMasked: input.didMasked,
         status: input.status,
         selectedDigit: input.selectedDigit,
@@ -1705,15 +1709,19 @@ export class Repository {
       input.messageText != null
         ? String(input.messageText).trim().slice(0, 500)
         : null;
+    const destinationPhone =
+      input.destinationPhone != null
+        ? String(input.destinationPhone).replace(/\D/g, '').slice(-10) || null
+        : null;
     this.db
       .prepare(`
         INSERT INTO dialed_calls (
           id, public_ref, app_call_id, provider_call_id,
-          destination_masked, did_masked, status,
+          destination_masked, destination_phone, did_masked, status,
           selected_digit, interpreted_response, duration_seconds, voice, message_text, source,
           answered_at, completed_at, started_at, metadata_json,
           created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `)
       .run(
         id,
@@ -1721,6 +1729,7 @@ export class Repository {
         input.appCallId ?? null,
         input.providerCallId ?? null,
         input.destinationMasked ?? null,
+        destinationPhone,
         input.didMasked ?? null,
         input.status ?? 'initiated',
         input.selectedDigit ?? null,
@@ -1766,6 +1775,7 @@ export class Repository {
         UPDATE dialed_calls SET
           provider_call_id = ?,
           destination_masked = ?,
+          destination_phone = ?,
           did_masked = ?,
           status = ?,
           selected_digit = ?,
@@ -1783,6 +1793,11 @@ export class Repository {
       .run(
         patch.providerCallId ?? existing.provider_call_id,
         patch.destinationMasked ?? existing.destination_masked,
+        patch.destinationPhone !== undefined
+          ? patch.destinationPhone == null
+            ? null
+            : String(patch.destinationPhone).replace(/\D/g, '').slice(-10) || null
+          : existing.destination_phone,
         patch.didMasked ?? existing.did_masked,
         patch.status ?? existing.status,
         patch.selectedDigit !== undefined
@@ -1834,6 +1849,7 @@ export class Repository {
         appCallId: stationRow.app_call_id,
         providerCallId: stationRow.provider_call_id,
         destinationMasked: stationRow.destination_masked,
+        destinationPhone: meta.destinationPhone ?? null,
         didMasked: stationRow.did_masked,
         status: stationRow.status || 'initiated',
         selectedDigit: meta.selectedDigit ?? null,
@@ -1854,6 +1870,8 @@ export class Repository {
     return this.updateDialedCall(dialed.public_ref, {
       providerCallId: stationRow.provider_call_id,
       destinationMasked: stationRow.destination_masked,
+      destinationPhone:
+        meta.destinationPhone !== undefined ? meta.destinationPhone : undefined,
       didMasked: stationRow.did_masked,
       status,
       selectedDigit:
@@ -1895,6 +1913,7 @@ export class Repository {
         (row) =>
           String(row.public_ref || '').toLowerCase().includes(q) ||
           String(row.destination_masked || '').toLowerCase().includes(q) ||
+          String(row.destination_phone || '').toLowerCase().includes(q) ||
           String(row.app_call_id || '').toLowerCase().includes(q) ||
           String(row.interpreted_response || '').toLowerCase().includes(q) ||
           String(row.message_text || '').toLowerCase().includes(q),

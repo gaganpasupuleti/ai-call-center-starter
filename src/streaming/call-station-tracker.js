@@ -404,6 +404,7 @@ export class CallStationTracker {
   recordOutboundDialerCall({
     appCallId,
     destinationMasked,
+    destinationPhone,
     messageLength,
     messageText,
     repeatCount,
@@ -413,6 +414,10 @@ export class CallStationTracker {
     const ts = nowIso();
     const trimmedMessage =
       messageText != null ? String(messageText).trim().slice(0, 500) : null;
+    const phoneDigits =
+      destinationPhone != null
+        ? String(destinationPhone).replace(/\D/g, '').slice(-10) || null
+        : null;
     const row = this.repository.createStreamTestCall({
       publicRef: `OB-${Date.now().toString(36)}`,
       appCallId: appCallId || null,
@@ -438,6 +443,7 @@ export class CallStationTracker {
         live: true,
         messageLength: Number(messageLength) || 0,
         messageText: trimmedMessage,
+        destinationPhone: phoneDigits,
         repeatCount: Number(repeatCount) || 1,
         voice: voice || null,
         ttsDurationSeconds: durationSeconds ?? null,
@@ -448,6 +454,7 @@ export class CallStationTracker {
         publicRef: row.public_ref,
         appCallId: appCallId || null,
         destinationMasked,
+        destinationPhone: phoneDigits,
         didMasked: maskPhone(this.config.didNumber),
         status: 'initiated',
         voice: voice || null,
@@ -458,6 +465,7 @@ export class CallStationTracker {
           source: 'outbound-dialer',
           messageLength: Number(messageLength) || 0,
           messageText: trimmedMessage,
+          destinationPhone: phoneDigits,
           repeatCount: Number(repeatCount) || 1,
         },
       });
