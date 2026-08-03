@@ -5,6 +5,7 @@
  */
 import { spawnSync } from 'node:child_process';
 import path from 'node:path';
+import { writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -41,7 +42,11 @@ function runOne({ language, scenario, mode = 'audio' }) {
     encoding: 'utf8',
     env: process.env,
     cwd: root,
+    timeout: Number(process.env.AUDIO_SIM_TIMEOUT_MS || 120000) + 30_000,
   });
+  console.error(
+    `done ${language}/${scenario} exit=${result.status} bytes=${(result.stdout || '').length}`,
+  );
   let report = null;
   try {
     report = JSON.parse(result.stdout || '{}');
@@ -123,7 +128,14 @@ function main() {
     failureCount: results.filter((r) => !r.report?.ok).length,
   };
 
+  console.error(JSON.stringify(summary));
   console.log(JSON.stringify(summary, null, 2));
+  try {
+    writeFileSync('/tmp/phase4e1-audio-battery.json', JSON.stringify(summary, null, 2));
+    console.error('WROTE /tmp/phase4e1-audio-battery.json');
+  } catch (err) {
+    console.error('WRITE_RESULTS_FAILED ' + err.message);
+  }
   if (!summary.ok) process.exit(1);
   console.error('PHASE_4E1_AUDIO_BATTERY_OK');
 }
