@@ -1,0 +1,13 @@
+# Copied beside the Piper service for path-as-root deploys.
+# Railway service Root Directory should be /services/piper-tts
+# Do not attach a public domain.
+
+[build]
+builder = "DOCKERFILE"
+dockerfilePath = "Dockerfile"
+
+[deploy]
+healthcheckPath = "/info"
+healthcheckTimeout = 180
+restartPolicyType = "ON_FAILURE"
+restartPolicyMaxRetries = 3

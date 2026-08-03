@@ -30,17 +30,19 @@ COPY scripts ./scripts
 # Opt out for local/dev builds: --build-arg DOWNLOAD_MODELS=false
 ARG DOWNLOAD_MODELS=true
 ARG WHISPER_MODEL=small
-RUN if [ "$DOWNLOAD_MODELS" = "true" ]; then \
+RUN set -eux; \
+    if [ "$DOWNLOAD_MODELS" = "true" ]; then \
       echo "Baking STT models (DOWNLOAD_MODELS=true WHISPER_MODEL=${WHISPER_MODEL})" ; \
       python scripts/download_models.py \
         --model "${WHISPER_MODEL}" \
         --download-root /models \
         --silero-out /models/silero_vad.onnx ; \
+      test -d /models ; \
       echo "STT model bake complete" ; \
     else \
       echo "Skipping STT model bake (DOWNLOAD_MODELS=false)" ; \
-    fi \
-    && chown -R appuser:appuser /models
+    fi ; \
+    chown -R appuser:appuser /models
 
 USER appuser
 EXPOSE 8000

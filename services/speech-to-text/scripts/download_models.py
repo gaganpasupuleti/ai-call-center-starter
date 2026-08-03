@@ -39,6 +39,23 @@ def download_silero(dest: Path) -> None:
     except Exception as exc:
         print(f"silero_package_note: {exc}")
 
+    # Prefer package data shipped with silero-vad.
+    try:
+        import silero_vad
+
+        pkg = Path(silero_vad.__file__).resolve().parent
+        for candidate in (
+            pkg / "data" / "silero_vad.onnx",
+            pkg / "data" / "silero_vad_half.onnx",
+            pkg / "data" / "silero_vad_op18_ifless.onnx",
+        ):
+            if candidate.is_file():
+                shutil.copy2(candidate, dest)
+                print(f"silero_copied_from_package {candidate}")
+                return
+    except Exception as exc:
+        print(f"silero_package_data_note: {exc}")
+
     # Fallback: onnx file may already be cached by the package.
     candidates = list(Path.home().glob("**/*silero*vad*.onnx"))
     for candidate in candidates[:5]:
@@ -48,8 +65,25 @@ def download_silero(dest: Path) -> None:
             return
         except Exception:
             continue
-    print(
-        "silero_warning: could not copy ONNX file; runtime may load via silero_vad package cache"
+
+    # Last resort: fetch from the upstream GitHub package data path.
+    url = (
+        "https://github.com/snakers4/silero-vad/raw/master/"
+        "src/silero_vad/data/silero_vad.onnx"
+    )
+    print(f"silero_download_fallback {url}")
+    try:
+        import urllib.request
+
+        urllib.request.urlretrieve(url, dest)
+        if dest.is_file() and dest.stat().st_size > 0:
+            print("silero_downloaded")
+            return
+    except Exception as exc:
+        print(f"silero_download_failed: {exc}")
+
+    raise SystemExit(
+        "silero_error: could not bake Silero ONNX into /models/silero_vad.onnx"
     )
 
 

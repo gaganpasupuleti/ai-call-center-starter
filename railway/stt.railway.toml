@@ -1,15 +1,14 @@
 # Railway service config — speech-to-text (private only)
-# Dockerfile path: services/speech-to-text/Dockerfile
-# Root directory: repository root (Dockerfile paths are relative to repo root)
+# Root directory in Railway UI/API: /services/speech-to-text
+# Dockerfile: Dockerfile (within that root)
 # Do not attach a public domain.
 # Models are baked by default (DOWNLOAD_MODELS=true in Dockerfile).
 
 [build]
 builder = "DOCKERFILE"
-dockerfilePath = "services/speech-to-text/Dockerfile"
+dockerfilePath = "Dockerfile"
 watchPatterns = [
-  "services/speech-to-text/**",
-  "railway/stt.railway.toml"
+  "/**"
 ]
 
 [deploy]

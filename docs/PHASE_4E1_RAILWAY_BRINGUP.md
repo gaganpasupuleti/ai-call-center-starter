@@ -51,10 +51,15 @@ Transcript injection alone is insufficient for a telephone call.
 
 | Service | Source | Config | Health | Port | Public domain |
 |---------|--------|--------|--------|------|---------------|
-| speech-to-text | repo `services/speech-to-text/Dockerfile` | `railway/stt.railway.toml` | `/healthz` | 8000 | none |
+| speech-to-text | `railway up ./services/speech-to-text --path-as-root` | `services/speech-to-text/railway.toml` (+ `railway/stt.railway.toml` notes) | `/healthz` | 8000 | none |
 | kokoro-tts | pinned GHCR image | `railway/kokoro.NOTES.md` | `/v1/audio/voices` | 8880 | none |
-| piper-tts | repo `services/piper-tts/Dockerfile` | `railway/piper.railway.toml` | `/info` | 5000 | none |
-| smartping-voice-stream | repo root | `railway/app.railway.toml` | `/healthz` | `$PORT` | staging app only |
+| piper-tts | `railway up ./services/piper-tts --path-as-root` | `services/piper-tts/railway.toml` | `/info` | 5000 | none |
+| smartping-voice-stream-e2e | repo root | `railway/app.railway.toml` | `/healthz` | `$PORT` | staging app only |
+
+Note: `speech-e2e` was created as an empty environment, so the production
+`smartping-voice-stream` service instance is not present there. Phase 4E.1 uses
+`smartping-voice-stream-e2e` in `speech-e2e` (same app image/config). Sync the
+production service into `speech-e2e` later if a single service name is required.
 
 **Environment:** `speech-e2e`  
 **Project:** `ai-call-center-stream`

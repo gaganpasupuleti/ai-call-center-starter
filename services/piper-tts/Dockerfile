@@ -33,7 +33,8 @@ RUN chmod +x start.sh scripts/*.py \
 # Pin exact HF revision (not floating main).
 ARG DOWNLOAD_VOICES=true
 ARG PIPER_VOICES_REVISION=9f967d15e9ccdf43078586d1476ee70f314401bd
-RUN if [ "$DOWNLOAD_VOICES" = "true" ]; then \
+RUN set -eux; \
+    if [ "$DOWNLOAD_VOICES" = "true" ]; then \
       echo "Baking Piper voices (DOWNLOAD_VOICES=true revision=${PIPER_VOICES_REVISION})" ; \
       python scripts/download_voices.py \
         --dest /models \
@@ -43,8 +44,8 @@ RUN if [ "$DOWNLOAD_VOICES" = "true" ]; then \
       echo "Piper voice bake complete" ; \
     else \
       echo "Skipping Piper voice bake (DOWNLOAD_VOICES=false)" ; \
-    fi \
-    && chown -R appuser:appuser /models
+    fi ; \
+    chown -R appuser:appuser /models
 
 USER appuser
 EXPOSE 5000

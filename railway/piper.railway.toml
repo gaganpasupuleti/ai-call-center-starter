@@ -1,15 +1,14 @@
 # Railway service config — piper-tts (private only)
-# Dockerfile path: services/piper-tts/Dockerfile
-# Root directory: repository root
+# Root directory in Railway UI/API: /services/piper-tts
+# Dockerfile: Dockerfile (within that root)
 # Do not attach a public domain.
 # Voices baked by default (DOWNLOAD_VOICES=true, pinned PIPER_VOICES_REVISION).
 
 [build]
 builder = "DOCKERFILE"
-dockerfilePath = "services/piper-tts/Dockerfile"
+dockerfilePath = "Dockerfile"
 watchPatterns = [
-  "services/piper-tts/**",
-  "railway/piper.railway.toml"
+  "/**"
 ]
 
 [deploy]
