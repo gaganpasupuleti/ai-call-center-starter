@@ -193,6 +193,28 @@ async function generateFixture({ language, text, inputWav, keepFixture }) {
   };
 }
 
+async function waitForListening(httpBase, streamSid, { timeoutMs = 60_000 } = {}) {
+  const started = Date.now();
+  let last = null;
+  while (Date.now() - started < timeoutMs) {
+    const res = await fetch(
+      `${httpBase}/api/speech/session-turn?streamSid=${encodeURIComponent(streamSid)}`,
+    );
+    last = await res.json().catch(() => ({}));
+    const life = last?.voiceLifecycle;
+    if (
+      res.ok &&
+      (life === 'listening' ||
+        life === 'speech_detected' ||
+        life === 'waiting_for_next_turn')
+    ) {
+      return last;
+    }
+    await sleep(400);
+  }
+  return last;
+}
+
 async function waitForTurn(httpBase, streamSid, {
   timeoutMs,
   expectedIntent,
@@ -319,8 +341,8 @@ async function runAudioMode({
       throw new Error('Caller fixture is not valid μ-law audio');
     }
 
-    // Wait for greeting / listening before pushing speech.
-    await sleep(800);
+    // Wait until greeting finishes and lifecycle is listening.
+    await waitForListening(httpBase, streamSid, { timeoutMs: 90_000 });
     const paced = await sendPacedMulaw(ws, streamSid, mulaw);
 
     const turn = await waitForTurn(httpBase, streamSid, {

@@ -11,8 +11,8 @@ import { fileURLToPath } from 'node:url';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(__dirname, '..');
 
-const EN = ['send_details'];
-const TE = ['callback'];
+const EN = ['send_details', 'callback', 'not_interested', 'do_not_call', 'human_agent'];
+const TE = ['send_details', 'callback', 'not_interested', 'do_not_call'];
 
 function envTarget() {
   return (
@@ -95,7 +95,7 @@ function main() {
   }
 
   // Latency loops (warm after scenarios) — limited for diagnostic redeploys.
-  const latencyRuns = Number(process.env.AUDIO_LATENCY_RUNS || 2);
+  const latencyRuns = Number(process.env.AUDIO_LATENCY_RUNS || 10);
   const enLatency = [];
   const teLatency = [];
   for (let i = 0; i < latencyRuns; i += 1) {
