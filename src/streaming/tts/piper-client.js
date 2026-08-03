@@ -1,36 +1,36 @@
 import { TextToSpeechProvider } from '../ai/interfaces.js';
 import { AUDIO } from '../constants.js';
-import { pcm24kToMulaw8k } from './audio-normalizer.js';
+import { wavToMulaw8k, isLikelyWav } from './audio-normalizer.js';
 import { BoundedTtsCache } from './bounded-tts-cache.js';
 import { TtsConcurrencyLimiter } from './tts-concurrency.js';
 import { TtsProviderError, TTS_ERROR_CODES } from './errors.js';
 import {
-  KOKORO_DEFAULT_VOICE,
-  filterRemoteVoices,
-  validateKokoroVoice,
-} from './kokoro-voices.js';
-import { isAllowedPiperVoice } from './piper-voices.js';
+  PIPER_DEFAULT_VOICE,
+  validatePiperVoice,
+  speedToLengthScale,
+} from './piper-voices.js';
+import { isAllowedKokoroVoice } from './kokoro-voices.js';
 
 /**
- * Self-hosted Kokoro-FastAPI English TTS → μ-law 8 kHz for SmartPing.
+ * Self-hosted Piper HTTP Telugu TTS → μ-law 8 kHz for SmartPing.
  */
-export class KokoroTextToSpeech extends TextToSpeechProvider {
+export class PiperTextToSpeech extends TextToSpeechProvider {
   constructor(options = {}) {
     super();
     this.baseUrl = String(options.baseUrl || '').replace(/\/+$/, '');
-    this.model = options.model || 'kokoro';
-    this.defaultVoice = options.defaultVoice || KOKORO_DEFAULT_VOICE;
+    this.defaultVoice = options.defaultVoice || PIPER_DEFAULT_VOICE;
     this.defaultSpeed = clampSpeed(options.defaultSpeed ?? 1.0, options);
-    this.pcmSampleRate = Number(options.pcmSampleRate || 24000);
     this.connectTimeoutMs = Number(options.connectTimeoutMs || 5000);
     this.requestTimeoutMs = Number(options.requestTimeoutMs || 20000);
     this.maxTextChars = Number(options.maxTextChars || 600);
-    this.maxPcmBytes = Number(options.maxPcmBytes || 8_388_608);
+    this.maxWavBytes = Number(options.maxWavBytes || 8_388_608);
     this.maxMulawBytes = Number(options.maxMulawBytes || 160_000);
     this.minSpeed = Number(options.minSpeed ?? 0.75);
     this.maxSpeed = Number(options.maxSpeed ?? 1.25);
+    this.minLengthScale = Number(options.minLengthScale ?? 0.8);
+    this.maxLengthScale = Number(options.maxLengthScale ?? 1.33);
     this.fetchImpl = options.fetchImpl || globalThis.fetch.bind(globalThis);
-    this.convert = options.convert || pcm24kToMulaw8k;
+    this.convert = options.convert || wavToMulaw8k;
     this.cache =
       options.cache ||
       new BoundedTtsCache({
@@ -50,24 +50,24 @@ export class KokoroTextToSpeech extends TextToSpeechProvider {
 
   async synthesize({
     text,
-    language = 'en',
+    language = 'te',
     voice,
     speed,
     metadata = {},
   } = {}) {
     const started = Date.now();
-    const lang = String(language || 'en').toLowerCase();
-    if (lang !== 'en') {
+    const lang = String(language || 'te').toLowerCase();
+    if (lang !== 'te') {
       throw new TtsProviderError(
         TTS_ERROR_CODES.LANGUAGE_NOT_CONFIGURED,
-        'Kokoro is English-only in Phase 4C',
+        'Piper is Telugu-only in Phase 4D',
         { statusCode: 400 },
       );
     }
     if (!this.baseUrl) {
       throw new TtsProviderError(
-        TTS_ERROR_CODES.NOT_CONFIGURED,
-        'Kokoro base URL is not configured',
+        TTS_ERROR_CODES.PIPER_NOT_CONFIGURED,
+        'Piper base URL is not configured',
         { statusCode: 503 },
       );
     }
@@ -75,7 +75,7 @@ export class KokoroTextToSpeech extends TextToSpeechProvider {
     const trimmed = String(text ?? '').trim();
     if (!trimmed) {
       throw new TtsProviderError(
-        TTS_ERROR_CODES.INVALID_RESPONSE,
+        TTS_ERROR_CODES.PIPER_INVALID_RESPONSE,
         'TTS text is required',
         { statusCode: 400 },
       );
@@ -88,19 +88,20 @@ export class KokoroTextToSpeech extends TextToSpeechProvider {
       );
     }
 
-    if (voice && isAllowedPiperVoice(voice)) {
+    if (voice && isAllowedKokoroVoice(voice)) {
       throw new TtsProviderError(
         TTS_ERROR_CODES.LANGUAGE_VOICE_MISMATCH,
-        'Telugu Piper voice cannot be used for English synthesis',
+        'English Kokoro voice cannot be used for Telugu synthesis',
         { statusCode: 400 },
       );
     }
 
-    const selectedVoice = validateKokoroVoice(voice || this.defaultVoice);
+    const selectedVoice = validatePiperVoice(voice || this.defaultVoice);
     const selectedSpeed = clampSpeed(speed ?? this.defaultSpeed, this);
+    const lengthScale = speedToLengthScale(selectedSpeed, this);
     const cacheKey = BoundedTtsCache.buildKey({
-      provider: 'kokoro-local',
-      language: 'en',
+      provider: 'piper-local',
+      language: 'te',
       voice: selectedVoice,
       speed: selectedSpeed,
       text: trimmed,
@@ -115,9 +116,9 @@ export class KokoroTextToSpeech extends TextToSpeechProvider {
           sampleRate: AUDIO.sampleRate,
           channels: 1,
         },
-        provider: 'kokoro-local',
+        provider: 'piper-local',
         voice: selectedVoice,
-        language: 'en',
+        language: 'te',
         durationSeconds: Number((cached.length / AUDIO.sampleRate).toFixed(3)),
         synthesisDurationMs: Date.now() - started,
         cached: true,
@@ -133,19 +134,18 @@ export class KokoroTextToSpeech extends TextToSpeechProvider {
         );
       }
 
-      let pcm;
+      let wav;
       try {
-        pcm = await this.#fetchPcm(trimmed, selectedVoice, selectedSpeed);
+        wav = await this.#fetchWav(trimmed, selectedVoice, lengthScale);
       } catch (err) {
         if (this._retryOnce && isRetryable(err)) {
-          pcm = await this.#fetchPcm(trimmed, selectedVoice, selectedSpeed);
+          wav = await this.#fetchWav(trimmed, selectedVoice, lengthScale);
         } else {
           throw err;
         }
       }
 
-      const converted = await this.convert(pcm, {
-        inputSampleRate: this.pcmSampleRate,
+      const converted = await this.convert(wav, {
         timeoutMs: this.requestTimeoutMs,
         maxMulawBytes: this.maxMulawBytes,
       });
@@ -155,9 +155,9 @@ export class KokoroTextToSpeech extends TextToSpeechProvider {
       return {
         audio: Buffer.from(converted.audio),
         format: converted.format,
-        provider: 'kokoro-local',
+        provider: 'piper-local',
         voice: selectedVoice,
-        language: 'en',
+        language: 'te',
         durationSeconds: converted.durationSeconds,
         synthesisDurationMs: Date.now() - started,
         cached: false,
@@ -165,42 +165,76 @@ export class KokoroTextToSpeech extends TextToSpeechProvider {
     });
   }
 
+  async fetchInfo() {
+    return this.#getJson('/info', this.connectTimeoutMs);
+  }
+
   async fetchVoices() {
+    const data = await this.#getJson('/voices', this.connectTimeoutMs);
+    if (Array.isArray(data)) return data;
+    if (data && typeof data === 'object') {
+      if (Array.isArray(data.voices)) return data.voices;
+      return Object.keys(data);
+    }
+    return [];
+  }
+
+  async getHealth() {
+    const base = {
+      provider: 'piper',
+      configured: Boolean(this.baseUrl),
+      reachable: false,
+      defaultVoice: this.defaultVoice,
+      language: 'te',
+    };
+    if (!this.baseUrl) return base;
+    try {
+      await this.fetchInfo();
+      const voices = await this.fetchVoices();
+      return {
+        ...base,
+        reachable: true,
+        voiceCount: Array.isArray(voices) ? voices.length : undefined,
+      };
+    } catch {
+      return base;
+    }
+  }
+
+  async #getJson(path, timeoutMs) {
     if (!this.baseUrl) {
       throw new TtsProviderError(
-        TTS_ERROR_CODES.NOT_CONFIGURED,
-        'Kokoro base URL is not configured',
+        TTS_ERROR_CODES.PIPER_NOT_CONFIGURED,
+        'Piper base URL is not configured',
       );
     }
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), this.connectTimeoutMs);
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
     try {
-      const response = await this.fetchImpl(`${this.baseUrl}/v1/audio/voices`, {
+      const response = await this.fetchImpl(`${this.baseUrl}${path}`, {
         method: 'GET',
         signal: controller.signal,
       });
       if (!response.ok) {
         throw new TtsProviderError(
-          TTS_ERROR_CODES.HTTP_ERROR,
-          `Voices endpoint returned ${response.status}`,
+          TTS_ERROR_CODES.PIPER_HTTP_ERROR,
+          `Piper ${path} returned ${response.status}`,
           { retryable: response.status >= 500 },
         );
       }
-      const data = await response.json().catch(() => ({}));
-      const list = Array.isArray(data) ? data : data.voices || data.data || [];
-      return filterRemoteVoices(list);
+      return await response.json().catch(() => ({}));
     } catch (err) {
       if (err?.name === 'AbortError') {
         throw new TtsProviderError(
-          TTS_ERROR_CODES.CONNECT_TIMEOUT,
-          'Kokoro voices request timed out',
+          TTS_ERROR_CODES.PIPER_CONNECT_TIMEOUT,
+          'Piper request timed out',
           { retryable: true },
         );
       }
       if (err instanceof TtsProviderError) throw err;
       throw new TtsProviderError(
-        TTS_ERROR_CODES.CONNECT_FAILED,
-        'Kokoro voices endpoint unreachable',
+        TTS_ERROR_CODES.PIPER_CONNECT_FAILED,
+        'Piper endpoint unreachable',
         { retryable: true },
       );
     } finally {
@@ -208,48 +242,32 @@ export class KokoroTextToSpeech extends TextToSpeechProvider {
     }
   }
 
-  async getHealth() {
-    const base = {
-      provider: 'kokoro',
-      configured: Boolean(this.baseUrl),
-      reachable: false,
-      defaultVoice: this.defaultVoice,
-      language: 'en',
-    };
-    if (!this.baseUrl) return base;
-    try {
-      const voices = await this.fetchVoices();
-      return {
-        ...base,
-        reachable: true,
-        allowedVoices: voices,
-      };
-    } catch {
-      return base;
-    }
-  }
-
-  async #fetchPcm(text, voice, speed) {
+  async #fetchWav(text, voice, lengthScale) {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), this.requestTimeoutMs);
     try {
-      const response = await this.fetchImpl(`${this.baseUrl}/v1/audio/speech`, {
+      const response = await this.fetchImpl(`${this.baseUrl}/synthesize`, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
-          model: this.model,
-          input: text,
+          text,
           voice,
-          response_format: 'pcm',
-          speed,
+          length_scale: lengthScale,
         }),
         signal: controller.signal,
       });
 
       if (!response.ok) {
+        if (response.status === 404) {
+          throw new TtsProviderError(
+            TTS_ERROR_CODES.PIPER_MODEL_UNAVAILABLE,
+            'Piper voice model is unavailable',
+            { statusCode: 502 },
+          );
+        }
         throw new TtsProviderError(
-          TTS_ERROR_CODES.HTTP_ERROR,
-          `Kokoro speech returned HTTP ${response.status}`,
+          TTS_ERROR_CODES.PIPER_HTTP_ERROR,
+          `Piper synthesize returned HTTP ${response.status}`,
           {
             retryable: response.status >= 500 || response.status === 429,
             statusCode: 502,
@@ -260,41 +278,48 @@ export class KokoroTextToSpeech extends TextToSpeechProvider {
       const contentType = String(response.headers?.get?.('content-type') || '');
       if (
         contentType &&
-        !/octet-stream|audio|pcm|application\/pcm/i.test(contentType) &&
-        !/application\/json/i.test(contentType)
+        !/wav|audio|octet-stream/i.test(contentType) &&
+        !/application\/octet-stream/i.test(contentType)
       ) {
-        // Soft check — some servers omit content-type
+        // Soft check — some servers omit or use generic types
       }
 
       const ab = await response.arrayBuffer();
-      const pcm = Buffer.from(ab);
-      if (!pcm.length) {
+      const wav = Buffer.from(ab);
+      if (!wav.length) {
         throw new TtsProviderError(
-          TTS_ERROR_CODES.EMPTY_RESPONSE,
-          'Kokoro returned empty audio',
+          TTS_ERROR_CODES.PIPER_EMPTY_RESPONSE,
+          'Piper returned empty audio',
           { statusCode: 502 },
         );
       }
-      if (pcm.length > this.maxPcmBytes) {
+      if (wav.length > this.maxWavBytes) {
         throw new TtsProviderError(
-          TTS_ERROR_CODES.RESPONSE_TOO_LARGE,
-          'Kokoro PCM response exceeds size limit',
+          TTS_ERROR_CODES.PIPER_RESPONSE_TOO_LARGE,
+          'Piper WAV response exceeds size limit',
           { statusCode: 502 },
         );
       }
-      return pcm;
+      if (!isLikelyWav(wav)) {
+        throw new TtsProviderError(
+          TTS_ERROR_CODES.PIPER_INVALID_RESPONSE,
+          'Piper response is not a valid WAV',
+          { statusCode: 502 },
+        );
+      }
+      return wav;
     } catch (err) {
       if (err?.name === 'AbortError') {
         throw new TtsProviderError(
-          TTS_ERROR_CODES.REQUEST_TIMEOUT,
-          'Kokoro speech request timed out',
+          TTS_ERROR_CODES.PIPER_REQUEST_TIMEOUT,
+          'Piper synthesize request timed out',
           { retryable: true },
         );
       }
       if (err instanceof TtsProviderError) throw err;
       throw new TtsProviderError(
-        TTS_ERROR_CODES.CONNECT_FAILED,
-        'Kokoro speech request failed',
+        TTS_ERROR_CODES.PIPER_CONNECT_FAILED,
+        'Piper synthesize request failed',
         { retryable: true },
       );
     } finally {
@@ -315,9 +340,9 @@ function isRetryable(err) {
   return (
     err instanceof TtsProviderError &&
     err.retryable &&
-    (err.code === TTS_ERROR_CODES.CONNECT_FAILED ||
-      err.code === TTS_ERROR_CODES.CONNECT_TIMEOUT ||
-      err.code === TTS_ERROR_CODES.REQUEST_TIMEOUT ||
-      err.code === TTS_ERROR_CODES.HTTP_ERROR)
+    (err.code === TTS_ERROR_CODES.PIPER_CONNECT_FAILED ||
+      err.code === TTS_ERROR_CODES.PIPER_CONNECT_TIMEOUT ||
+      err.code === TTS_ERROR_CODES.PIPER_REQUEST_TIMEOUT ||
+      err.code === TTS_ERROR_CODES.PIPER_HTTP_ERROR)
   );
 }

@@ -1535,7 +1535,7 @@ async function renderOutbound() {
             <div class="admin-field">
               <label>Voice</label>
               <div class="voice-toggle" role="radiogroup" aria-label="Voice" id="outbound-voice-toggle"></div>
-              <input type="hidden" id="outbound-voice" value="${escapeHtml(health.defaultVoice || 'en-IN-NeerjaNeural')}" />
+              <input type="hidden" id="outbound-voice" value="${escapeHtml(health.defaultVoice || 'af_bella')}" />
               <input type="hidden" id="outbound-lang" value="en" />
             </div>
 
@@ -1622,10 +1622,10 @@ async function renderOutbound() {
   let previewRequestId = 0;
 
   const allVoices = health.voiceOptions || [
-    { id: 'en-IN-NeerjaNeural', label: 'Neerja', description: 'Female', language: 'en', gender: 'female' },
-    { id: 'en-IN-PrabhatNeural', label: 'Prabhat', description: 'Male', language: 'en', gender: 'male' },
-    { id: 'te-IN-ShrutiNeural', label: 'Priya', description: 'Female', language: 'te', gender: 'female' },
-    { id: 'te-IN-MohanNeural', label: 'Ravi', description: 'Male', language: 'te', gender: 'male' },
+    { id: 'af_bella', label: 'Bella', description: 'Female', language: 'en', gender: 'female' },
+    { id: 'am_michael', label: 'Michael', description: 'Male', language: 'en', gender: 'male' },
+    { id: 'te_IN-padmavathi-medium', label: 'Padmavathi', description: 'Female', language: 'te', gender: 'female' },
+    { id: 'te_IN-venkatesh-medium', label: 'Venkatesh', description: 'Male', language: 'te', gender: 'male' },
   ];
   const langOptions = health.languageOptions || [
     { id: 'en', label: 'English', hint: 'Write in English' },
@@ -1650,7 +1650,7 @@ async function renderOutbound() {
   }
 
   function selectedVoice() {
-    return voiceInput.value || health.defaultVoice || 'en-IN-NeerjaNeural';
+    return voiceInput.value || health.defaultVoice || 'af_bella';
   }
 
   function selectedLanguage() {
@@ -1734,7 +1734,7 @@ async function renderOutbound() {
     const preferred =
       preferredVoice && options.some((v) => v.id === preferredVoice)
         ? preferredVoice
-        : options[0]?.id || health.defaultVoice || 'en-IN-NeerjaNeural';
+        : options[0]?.id || health.defaultVoice || 'af_bella';
     voiceInput.value = preferred;
     voiceToggle.innerHTML = options
       .map((option) => {
@@ -1774,7 +1774,7 @@ async function renderOutbound() {
   }
 
   const defaultVoiceMeta =
-    allVoices.find((v) => v.id === (health.defaultVoice || 'en-IN-NeerjaNeural')) ||
+    allVoices.find((v) => v.id === (health.defaultVoice || 'af_bella')) ||
     allVoices[0];
   langInput.value = defaultVoiceMeta?.language || 'en';
   $$('.seg-option').forEach((btn) => {
@@ -1795,7 +1795,7 @@ async function renderOutbound() {
       applyLanguageSample(btn.dataset.lang);
     });
   });
-  renderVoiceOptions(health.defaultVoice || 'en-IN-NeerjaNeural');
+  renderVoiceOptions(health.defaultVoice || 'af_bella');
   updateMessageChrome();
 
   function syncAgentField() {

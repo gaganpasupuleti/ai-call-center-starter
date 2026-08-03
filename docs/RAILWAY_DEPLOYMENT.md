@@ -83,8 +83,10 @@ View them at `#/call-station` on the same service.
 
 ```text
 OUTBOUND_DIALER_LIVE=true
-OUTBOUND_TTS_PROVIDER=edge
-OUTBOUND_TTS_VOICE=en-IN-NeerjaNeural
+OUTBOUND_TTS_PROVIDER=inherit
+OUTBOUND_TTS_VOICE=af_bella
+# Supported: inherit | mock | local | kokoro | piper
+# msedge / edge are rejected (Microsoft online TTS removed in Phase 4D)
 ```
 
 Stage 1 single-call gates (leave false unless you intentionally open classic CLI gates):

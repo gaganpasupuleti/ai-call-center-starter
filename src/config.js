@@ -63,22 +63,38 @@ function normalizeVoiceSttProvider(value) {
 
 function normalizeVoiceTtsProvider(value) {
   const mode = String(value ?? 'mock').trim().toLowerCase();
-  if (mode === 'mock' || mode === 'kokoro' || mode === 'msedge') return mode;
-  if (mode === 'edge') return 'msedge';
-  if (mode === '' || mode == null) return 'mock';
+  if (mode === 'msedge' || mode === 'edge') {
+    throw new Error(
+      `VOICE_TTS_PROVIDER="${value}" is no longer supported. Microsoft Edge online TTS was removed. Use mock, local, kokoro, or piper.`,
+    );
+  }
+  if (mode === 'mock' || mode === 'local' || mode === 'kokoro' || mode === 'piper') {
+    return mode;
+  }
+  if (mode === '' || value == null) return 'mock';
   throw new Error(
-    `Invalid VOICE_TTS_PROVIDER "${value}". Use mock, kokoro, or msedge.`,
+    `Invalid VOICE_TTS_PROVIDER "${value}". Use mock, local, kokoro, or piper.`,
   );
 }
 
 function normalizeOutboundTtsProvider(value) {
-  const mode = String(value ?? 'msedge').trim().toLowerCase();
-  if (mode === 'inherit' || mode === 'mock' || mode === 'kokoro' || mode === 'msedge') {
+  const mode = String(value ?? 'inherit').trim().toLowerCase();
+  if (mode === 'msedge' || mode === 'edge') {
+    throw new Error(
+      `OUTBOUND_TTS_PROVIDER="${value}" is no longer supported. Microsoft Edge online TTS was removed. Use inherit, mock, local, kokoro, or piper.`,
+    );
+  }
+  if (
+    mode === 'inherit' ||
+    mode === 'mock' ||
+    mode === 'local' ||
+    mode === 'kokoro' ||
+    mode === 'piper'
+  ) {
     return mode;
   }
-  if (mode === 'edge') return 'msedge';
   throw new Error(
-    `Invalid OUTBOUND_TTS_PROVIDER "${value}". Use inherit, mock, kokoro, or msedge.`,
+    `Invalid OUTBOUND_TTS_PROVIDER "${value}". Use inherit, mock, local, kokoro, or piper.`,
   );
 }
 
@@ -203,12 +219,12 @@ export function getConfig(overrides = {}) {
       ttsProvider: normalizeOutboundTtsProvider(
         overrides.outbound?.ttsProvider ??
           process.env.OUTBOUND_TTS_PROVIDER ??
-          'msedge',
+          'inherit',
       ),
       ttsVoice:
         overrides.outbound?.ttsVoice ??
         process.env.OUTBOUND_TTS_VOICE ??
-        'en-IN-NeerjaNeural',
+        'af_bella',
       dialerLive:
         overrides.outbound?.dialerLive ??
         envFlag('OUTBOUND_DIALER_LIVE', false),
@@ -241,6 +257,51 @@ export function getConfig(overrides = {}) {
         overrides.kokoro?.pcmSampleRate ??
           process.env.KOKORO_PCM_SAMPLE_RATE ??
           24000,
+      ),
+    },
+    piper: {
+      baseUrl:
+        overrides.piper?.baseUrl ??
+        process.env.PIPER_BASE_URL ??
+        'http://127.0.0.1:5000',
+      defaultVoice:
+        overrides.piper?.defaultVoice ??
+        process.env.PIPER_DEFAULT_VOICE ??
+        'te_IN-padmavathi-medium',
+      allowedVoices: String(
+        overrides.piper?.allowedVoices ??
+          process.env.PIPER_ALLOWED_VOICES ??
+          'te_IN-padmavathi-medium,te_IN-venkatesh-medium',
+      ),
+      defaultSpeed: Number(
+        overrides.piper?.defaultSpeed ??
+          process.env.PIPER_DEFAULT_SPEED ??
+          1.0,
+      ),
+      connectTimeoutMs: Number(
+        overrides.piper?.connectTimeoutMs ??
+          process.env.PIPER_CONNECT_TIMEOUT_MS ??
+          5000,
+      ),
+      requestTimeoutMs: Number(
+        overrides.piper?.requestTimeoutMs ??
+          process.env.PIPER_REQUEST_TIMEOUT_MS ??
+          20000,
+      ),
+      maxWavBytes: Number(
+        overrides.piper?.maxWavBytes ??
+          process.env.PIPER_MAX_WAV_BYTES ??
+          8_388_608,
+      ),
+      maxTextChars: Number(
+        overrides.piper?.maxTextChars ??
+          process.env.PIPER_MAX_TEXT_CHARS ??
+          600,
+      ),
+      maxConcurrentSynthesis: Number(
+        overrides.piper?.maxConcurrentSynthesis ??
+          process.env.PIPER_MAX_CONCURRENT_SYNTHESIS ??
+          2,
       ),
     },
     tts: {
@@ -368,6 +429,8 @@ export function getPublicSettings(config, providerName) {
     voiceTtsProvider: config.voiceTtsProvider || 'mock',
     kokoroConfigured: Boolean(config.kokoro?.baseUrl),
     kokoroDefaultVoice: config.kokoro?.defaultVoice || 'af_bella',
+    piperConfigured: Boolean(config.piper?.baseUrl),
+    piperDefaultVoice: config.piper?.defaultVoice || 'te_IN-padmavathi-medium',
     sttStreamUrlConfigured: Boolean(config.stt?.streamUrl),
     webhookAuthenticationConfigured: Boolean(config.webhookSecret),
     smartPingWebhookPath: config.smartPing.webhookPath,

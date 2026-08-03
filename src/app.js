@@ -36,22 +36,24 @@ import {
   normalizeInteractiveMenu,
   buildInteractivePromptText,
   formatTransferPhone,
+  voiceMeta,
   OUTBOUND_VOICE_OPTIONS,
   OUTBOUND_LANGUAGE_OPTIONS,
 } from './streaming/outbound/phone.js';
 import { getOutboundPromptStore } from './streaming/outbound/prompt-store.js';
 import {
   getTtsHealth,
+  getCombinedTtsHealth,
   TtsError,
   teluguVoiceNeedsTeluguScript,
-} from './streaming/tts/synthesize.js';
-import { synthesizeOutboundAudio } from './streaming/tts/tts-provider-factory.js';
-import { KokoroTextToSpeech } from './streaming/tts/kokoro-client.js';
+  synthesizeOutboundAudio,
+} from './streaming/tts/tts-provider-factory.js';
 import {
   concatMulawWithRepeats,
   mulawToWavBase64,
 } from './streaming/tts/mulaw-encode.js';
 import { maskPhone } from './streaming/call-station.js';
+import { KOKORO_DEFAULT_VOICE } from './streaming/tts/kokoro-voices.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const publicDirectory = path.resolve(__dirname, '..', 'public');
@@ -296,24 +298,9 @@ export function createApp({
       if (request.method === 'GET' && pathname === '/api/outbound/health') {
         const tts = getTtsHealth({
           voice: config.outbound?.ttsVoice,
+          config,
         });
-        let kokoro = null;
-        if (config.voiceTtsProvider === 'kokoro' || config.outbound?.ttsProvider === 'kokoro') {
-          const client = new KokoroTextToSpeech({
-            baseUrl: config.kokoro?.baseUrl,
-            defaultVoice: config.kokoro?.defaultVoice,
-            connectTimeoutMs: Math.min(3000, config.tts?.connectTimeoutMs || 3000),
-          });
-          kokoro = await client.getHealth();
-        } else if (config.kokoro?.baseUrl) {
-          kokoro = {
-            provider: 'kokoro',
-            configured: true,
-            reachable: null,
-            defaultVoice: config.kokoro.defaultVoice,
-            language: 'en',
-          };
-        }
+        const localTts = await getCombinedTtsHealth(config);
         const liveGatesOpen = outboundLiveReady();
         return sendJson(response, 200, {
           destinationMasked: maskPhone(process.env.SMARTPING_TEST_PHONE_NUMBER || ''),
@@ -332,11 +319,12 @@ export function createApp({
           streamUrlConfigured: Boolean(config.smartPing?.streamUrlConfigured),
           playbackMode: config.smartPing?.playbackMode || 'pipeline',
           voiceTtsProvider: config.voiceTtsProvider || 'mock',
+          outboundTtsProvider: config.outbound?.ttsProvider || 'inherit',
           tts,
-          kokoro,
+          localTts,
           voiceOptions: OUTBOUND_VOICE_OPTIONS,
           languageOptions: OUTBOUND_LANGUAGE_OPTIONS,
-          defaultVoice: config.outbound?.ttsVoice || 'en-IN-NeerjaNeural',
+          defaultVoice: config.outbound?.ttsVoice || KOKORO_DEFAULT_VOICE,
           messageMaxLength: 500,
           repeatMin: 1,
           repeatMax: 5,
@@ -352,7 +340,7 @@ export function createApp({
         const repeatCount = normalizeRepeatCount(body.repeatCount ?? body.repeat);
         const voicePick = normalizeOutboundVoice(
           body.voice,
-          config.outbound?.ttsVoice || 'en-IN-NeerjaNeural',
+          config.outbound?.ttsVoice || KOKORO_DEFAULT_VOICE,
         );
         if (!phone.ok) {
           return sendJson(response, 400, { error: phone.error, code: phone.code });
@@ -403,11 +391,12 @@ export function createApp({
             {
               voice: voicePick.voice,
               requireMatchingScript: true,
-              language: voicePick.voice?.startsWith('te') ? 'te' : 'en',
+              language: voiceMeta(voicePick.voice)?.language || 'en',
+              voiceLanguage: voiceMeta(voicePick.voice)?.language,
             },
             config,
           );
-          if (synthesized.voice !== voicePick.voice && synthesized.provider === 'msedge') {
+          if (synthesized.voice !== voicePick.voice && synthesized.provider !== 'mock-tts') {
             return sendJson(response, 500, {
               error: 'Synthesized voice did not match the selected voice',
               code: 'tts_voice_mismatch',
@@ -483,7 +472,7 @@ export function createApp({
         const repeatCount = normalizeRepeatCount(body.repeatCount ?? body.repeat);
         const voicePick = normalizeOutboundVoice(
           body.voice,
-          config.outbound?.ttsVoice || 'en-IN-NeerjaNeural',
+          config.outbound?.ttsVoice || KOKORO_DEFAULT_VOICE,
         );
         const confirm = body.confirm === true;
         if (!phone.ok) {
@@ -575,7 +564,8 @@ export function createApp({
             {
               voice: voicePick.voice,
               requireMatchingScript: true,
-              language: voicePick.voice?.startsWith('te') ? 'te' : 'en',
+              language: voiceMeta(voicePick.voice)?.language || 'en',
+              voiceLanguage: voiceMeta(voicePick.voice)?.language,
             },
             config,
           );
@@ -587,7 +577,7 @@ export function createApp({
           });
         }
         if (
-          synthesized.provider === 'msedge' &&
+          synthesized.provider !== 'mock-tts' &&
           synthesized.voice !== voicePick.voice
         ) {
           return sendJson(response, 500, {
@@ -607,7 +597,8 @@ export function createApp({
                 {
                   voice: voicePick.voice,
                   requireMatchingScript: true,
-                  language: voicePick.voice?.startsWith('te') ? 'te' : 'en',
+                  language: voiceMeta(voicePick.voice)?.language || 'en',
+                  voiceLanguage: voiceMeta(voicePick.voice)?.language,
                 },
                 config,
               );

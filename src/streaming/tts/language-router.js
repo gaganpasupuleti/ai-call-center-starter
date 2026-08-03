@@ -1,9 +1,11 @@
 import { TextToSpeechProvider } from '../ai/interfaces.js';
 import { TtsProviderError, TTS_ERROR_CODES } from './errors.js';
+import { isAllowedKokoroVoice } from './kokoro-voices.js';
+import { isAllowedPiperVoice } from './piper-voices.js';
 
 /**
  * Language-aware TTS router.
- * Phase 4C: English → Kokoro (or mock/msedge). Telugu → unavailable until 4D.
+ * English → Kokoro (or mock). Telugu → Piper (or mock).
  */
 export class LanguageTtsRouter extends TextToSpeechProvider {
   constructor({
@@ -12,10 +14,10 @@ export class LanguageTtsRouter extends TextToSpeechProvider {
     defaultLanguage = 'en',
   } = {}) {
     super();
-    if (!englishProvider) {
+    if (!englishProvider && !teluguProvider) {
       throw new TtsProviderError(
         TTS_ERROR_CODES.NOT_CONFIGURED,
-        'English TTS provider is required',
+        'At least one TTS provider is required',
       );
     }
     this.englishProvider = englishProvider;
@@ -25,25 +27,108 @@ export class LanguageTtsRouter extends TextToSpeechProvider {
 
   async synthesize(input = {}) {
     const language = normalizeLanguage(input.language, this.defaultLanguage);
+    if (!language) {
+      throw new TtsProviderError(
+        TTS_ERROR_CODES.LANGUAGE_NOT_CONFIGURED,
+        'Unsupported TTS language',
+        { statusCode: 400 },
+      );
+    }
+
+    const voice = input.voice ? String(input.voice).trim() : '';
+    if (voice) {
+      if (language === 'te' && isAllowedKokoroVoice(voice)) {
+        throw new TtsProviderError(
+          TTS_ERROR_CODES.LANGUAGE_VOICE_MISMATCH,
+          'English voice cannot be used with Telugu text',
+          { statusCode: 400 },
+        );
+      }
+      if (language === 'en' && isAllowedPiperVoice(voice)) {
+        throw new TtsProviderError(
+          TTS_ERROR_CODES.LANGUAGE_VOICE_MISMATCH,
+          'Telugu voice cannot be used with English text',
+          { statusCode: 400 },
+        );
+      }
+    }
+
     if (language === 'te') {
       if (!this.teluguProvider) {
         throw new TtsProviderError(
           TTS_ERROR_CODES.LANGUAGE_NOT_CONFIGURED,
-          'Telugu TTS is not configured until Phase 4D',
+          'Telugu TTS is not configured',
           { statusCode: 501 },
         );
       }
       return this.teluguProvider.synthesize({ ...input, language: 'te' });
     }
+
+    if (!this.englishProvider) {
+      throw new TtsProviderError(
+        TTS_ERROR_CODES.LANGUAGE_NOT_CONFIGURED,
+        'English TTS is not configured',
+        { statusCode: 501 },
+      );
+    }
     return this.englishProvider.synthesize({ ...input, language: 'en' });
   }
 }
 
-function normalizeLanguage(value, fallback = 'en') {
-  const raw = String(value || fallback).trim().toLowerCase();
-  if (raw === 'te' || raw === 'telugu' || raw.startsWith('te-')) return 'te';
-  if (raw === 'en' || raw === 'english' || raw.startsWith('en-') || raw === 'auto') {
+/**
+ * Normalize language aliases to en | te | null (unsupported).
+ */
+export function normalizeLanguage(value, fallback = 'en') {
+  if (value == null || value === '') {
+    if (fallback == null) return null;
+    return fallback === 'te' ? 'te' : 'en';
+  }
+  const raw = String(value).trim().toLowerCase().replace(/_/g, '-');
+  if (raw === 'auto') return fallback === 'te' ? 'te' : 'en';
+  if (
+    raw === 'te' ||
+    raw === 'telugu' ||
+    raw === 'te-in' ||
+    raw.startsWith('te-')
+  ) {
+    return 'te';
+  }
+  if (
+    raw === 'en' ||
+    raw === 'english' ||
+    raw === 'en-in' ||
+    raw === 'en-us' ||
+    raw.startsWith('en-')
+  ) {
     return 'en';
+  }
+  return null;
+}
+
+/**
+ * Outbound language priority:
+ * 1. Explicit request language
+ * 2. Campaign language
+ * 3. Lead language
+ * 4. Voice language metadata
+ * 5. Safe configured default
+ */
+export function resolveSpeechLanguage({
+  explicit,
+  campaignLanguage,
+  leadLanguage,
+  voiceLanguage,
+  defaultLanguage = 'en',
+} = {}) {
+  for (const candidate of [
+    explicit,
+    campaignLanguage,
+    leadLanguage,
+    voiceLanguage,
+    defaultLanguage,
+  ]) {
+    const normalized = normalizeLanguage(candidate, null);
+    if (normalized) return normalized;
   }
   return 'en';
 }

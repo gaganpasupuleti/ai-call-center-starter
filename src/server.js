@@ -11,6 +11,7 @@ import { getOutboundPromptStore } from './streaming/outbound/prompt-store.js';
 import { VoicePipeline } from './streaming/ai/pipeline.js';
 import { createTextToSpeechProvider } from './streaming/tts/tts-provider-factory.js';
 import { KOKORO_DEFAULT_VOICE } from './streaming/tts/kokoro-voices.js';
+import { PIPER_DEFAULT_VOICE } from './streaming/tts/piper-voices.js';
 
 const config = getConfig();
 const repository = new Repository(config.databasePath);
@@ -24,9 +25,11 @@ const voicePipeline = new VoicePipeline({
   tts: createTextToSpeechProvider(config),
   ttsConfig: config,
   defaultVoice:
-    config.voiceTtsProvider === 'kokoro'
+    config.voiceTtsProvider === 'kokoro' || config.voiceTtsProvider === 'local'
       ? config.kokoro?.defaultVoice || KOKORO_DEFAULT_VOICE
-      : null,
+      : config.voiceTtsProvider === 'piper'
+        ? config.piper?.defaultVoice || PIPER_DEFAULT_VOICE
+        : null,
 });
 const sessionManager = new StreamSessionManager({
   repository,

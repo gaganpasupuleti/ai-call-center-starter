@@ -22,3 +22,11 @@ audio-dumps/
 **/.venv/
 **/__pycache__/
 services/speech-to-text/models/
+
+# Piper voice models (downloaded locally; not committed)
+services/piper-tts/models/*.onnx
+services/piper-tts/models/*.onnx.json
+services/piper-tts/models/*.MODEL_CARD
+services/piper-tts/models/voices.manifest.json
+services/piper-tts/models/MODEL_CARD
+

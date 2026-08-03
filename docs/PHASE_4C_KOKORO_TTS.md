@@ -91,7 +91,7 @@ Do not change production Railway variables from automation in this phase.
 
 ## Outbound dialer
 
-`OUTBOUND_TTS_PROVIDER=inherit|mock|kokoro|msedge` (default `msedge` preserves current Edge dialer). When set to `kokoro`, English prompts and DTMF clips use Kokoro; Telugu remains unavailable.
+`OUTBOUND_TTS_PROVIDER=inherit|mock|local|kokoro|piper` (default `inherit`). Microsoft Edge online TTS was removed in Phase 4D; `msedge`/`edge` fail startup.
 
 ## Known limitations
 

@@ -26,6 +26,7 @@ function makeConfig(overrides = {}) {
   const config = getConfig({
     exposureMode: 'full',
     databasePath: ':memory:',
+    voiceTtsProvider: 'mock',
     smartPing: {
       apiToken: SECRET,
       baseUrl: 'https://voicecpt.apps.smartpingcc.io',
@@ -39,15 +40,20 @@ function makeConfig(overrides = {}) {
     },
     outbound: {
       dialerLive: false,
+      ttsProvider: 'inherit',
+      ttsVoice: 'af_bella',
       ...(overrides.outbound || {}),
     },
     ...overrides,
   });
   config.exposureMode = overrides.exposureMode || 'full';
+  config.voiceTtsProvider = overrides.voiceTtsProvider || 'mock';
   // Ignore process.env OUTBOUND_DIALER_LIVE unless a test opts in.
   config.outbound = {
     ...(config.outbound || {}),
     dialerLive: overrides.outbound?.dialerLive === true,
+    ttsProvider: overrides.outbound?.ttsProvider || 'inherit',
+    ttsVoice: overrides.outbound?.ttsVoice || 'af_bella',
   };
   return config;
 }
@@ -103,11 +109,11 @@ test('phone normalization accepts 10 digits and strips 91 prefix', () => {
   assert.equal(normalizeOutboundMessage('Hello').ok, true);
   assert.equal(normalizeRepeatCount(9), 5);
   assert.equal(normalizeRepeatCount(0), 1);
-  assert.equal(normalizeOutboundVoice('en-IN-PrabhatNeural').voice, 'en-IN-PrabhatNeural');
-  assert.equal(normalizeOutboundVoice('te-IN-ShrutiNeural').voice, 'te-IN-ShrutiNeural');
-  assert.equal(normalizeOutboundVoice('te-IN-MohanNeural').voice, 'te-IN-MohanNeural');
+  assert.equal(normalizeOutboundVoice('am_michael').voice, 'am_michael');
+  assert.equal(normalizeOutboundVoice('te_IN-padmavathi-medium').voice, 'te_IN-padmavathi-medium');
+  assert.equal(normalizeOutboundVoice('te_IN-venkatesh-medium').voice, 'te_IN-venkatesh-medium');
   assert.equal(normalizeOutboundVoice('en-US-JennyNeural').ok, false);
-  assert.equal(normalizeOutboundVoice('').voice, 'en-IN-NeerjaNeural');
+  assert.equal(normalizeOutboundVoice('').voice, 'af_bella');
 });
 
 test('Telugu preview rejects English-only text', async () => {
@@ -115,7 +121,7 @@ test('Telugu preview rejects English-only text', async () => {
     const denied = await postJson(base, '/api/outbound/preview', {
       phoneNumber: PHONE,
       message: 'Hi, hello! How are you doing today?',
-      voice: 'te-IN-ShrutiNeural',
+      voice: 'te_IN-padmavathi-medium',
     });
     assert.equal(denied.response.status, 400);
     assert.equal(denied.body.code, 'tts_telugu_script_required');
@@ -123,10 +129,10 @@ test('Telugu preview rejects English-only text', async () => {
     const allowed = await postJson(base, '/api/outbound/preview', {
       phoneNumber: PHONE,
       message: 'నమస్కారం! మీరు ఎలా ఉన్నారు?',
-      voice: 'te-IN-ShrutiNeural',
+      voice: 'te_IN-padmavathi-medium',
     });
     assert.equal(allowed.response.status, 200);
-    assert.equal(allowed.body.voice, 'te-IN-ShrutiNeural');
+    assert.equal(allowed.body.voice, 'te_IN-padmavathi-medium');
     if (allowed.body.audio?.estimated === false) {
       assert.equal(allowed.body.audio.locale, 'te-IN');
       assert.equal(allowed.body.audio.hasTeluguScript, true);
@@ -161,8 +167,8 @@ test('outbound health and preview never leak secrets or dial', async () => {
     assert.equal(health.body.liveCallActionAvailable, false);
     assert.equal(health.body.voiceOptions?.length, 4);
     assert.equal(health.body.languageOptions?.length, 2);
-    assert.ok(health.body.voiceOptions.some((v) => v.id === 'te-IN-ShrutiNeural'));
-    assert.ok(health.body.voiceOptions.some((v) => v.id === 'te-IN-MohanNeural'));
+    assert.ok(health.body.voiceOptions.some((v) => v.id === 'te_IN-padmavathi-medium'));
+    assert.ok(health.body.voiceOptions.some((v) => v.id === 'te_IN-venkatesh-medium'));
     const serializedHealth = JSON.stringify(health.body);
     assert.equal(serializedHealth.includes(SECRET), false);
 
@@ -170,15 +176,15 @@ test('outbound health and preview never leak secrets or dial', async () => {
       phoneNumber: PHONE,
       message: 'Hello from outbound dialer preview.',
       repeatCount: 2,
-      voice: 'en-IN-NeerjaNeural',
+      voice: 'af_bella',
     });
     assert.equal(preview.response.status, 200);
     assert.equal(preview.body.networkRequestMade, false);
     assert.equal(preview.body.phoneMasked, '••••4410');
     assert.equal(preview.body.repeatCount, 2);
-    assert.equal(preview.body.voice, 'en-IN-NeerjaNeural');
+    assert.equal(preview.body.voice, 'af_bella');
     if (preview.body.audio?.estimated === false) {
-      assert.equal(preview.body.audio.voice, 'en-IN-NeerjaNeural');
+      assert.equal(preview.body.audio.voice, 'af_bella');
       assert.ok(preview.body.audio.preview?.base64);
     }
     const serialized = JSON.stringify(preview.body);

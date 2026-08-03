@@ -1,0 +1,2 @@
+# Piper HTTP TTS service (CPU). GPL-3.0-or-later — keep isolated from the Node app.
+piper-tts[http]==1.5.0

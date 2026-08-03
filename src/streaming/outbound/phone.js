@@ -1,41 +1,47 @@
 import { maskPhone } from '../call-station.js';
+import { KOKORO_DEFAULT_VOICE } from '../tts/kokoro-voices.js';
 
 export const OUTBOUND_VOICE_OPTIONS = [
   {
-    id: 'en-IN-NeerjaNeural',
-    label: 'Neerja',
+    id: 'af_bella',
+    label: 'Bella',
     description: 'Female',
     language: 'en',
     languageLabel: 'English',
     gender: 'female',
+    provider: 'kokoro',
   },
   {
-    id: 'en-IN-PrabhatNeural',
-    label: 'Prabhat',
+    id: 'am_michael',
+    label: 'Michael',
     description: 'Male',
     language: 'en',
     languageLabel: 'English',
     gender: 'male',
+    provider: 'kokoro',
   },
   {
-    id: 'te-IN-ShrutiNeural',
-    label: 'Priya',
+    id: 'te_IN-padmavathi-medium',
+    label: 'Padmavathi',
     description: 'Female',
     language: 'te',
     languageLabel: 'Telugu',
     gender: 'female',
+    provider: 'piper',
   },
   {
-    id: 'te-IN-MohanNeural',
-    label: 'Ravi',
+    id: 'te_IN-venkatesh-medium',
+    label: 'Venkatesh',
     description: 'Male',
     language: 'te',
     languageLabel: 'Telugu',
     gender: 'male',
+    provider: 'piper',
   },
 ];
 
 const ALLOWED_VOICES = new Set(OUTBOUND_VOICE_OPTIONS.map((v) => v.id));
+const DEFAULT_OUTBOUND_VOICE = KOKORO_DEFAULT_VOICE || 'af_bella';
 
 export const OUTBOUND_LANGUAGE_OPTIONS = [
   { id: 'en', label: 'English', hint: 'Write in English' },
@@ -82,7 +88,7 @@ export function normalizeRepeatCount(value, fallback = 1) {
   return Math.max(1, Math.min(5, Math.round(n)));
 }
 
-export function normalizeOutboundVoice(raw, fallback = 'en-IN-NeerjaNeural') {
+export function normalizeOutboundVoice(raw, fallback = DEFAULT_OUTBOUND_VOICE) {
   const voice = String(raw ?? '').trim();
   if (ALLOWED_VOICES.has(voice)) {
     return { ok: true, voice };
@@ -91,13 +97,13 @@ export function normalizeOutboundVoice(raw, fallback = 'en-IN-NeerjaNeural') {
     return { ok: true, voice: fallback };
   }
   if (!voice) {
-    return { ok: true, voice: 'en-IN-NeerjaNeural' };
+    return { ok: true, voice: DEFAULT_OUTBOUND_VOICE };
   }
   return {
     ok: false,
     voice: null,
     error:
-      'Choose an English (Neerja/Prabhat) or Telugu (Shruti/Mohan) voice',
+      'Choose an English (Bella/Michael) or Telugu (Padmavathi/Venkatesh) voice',
     code: 'invalid_voice',
   };
 }
