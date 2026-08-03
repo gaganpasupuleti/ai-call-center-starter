@@ -1,0 +1,9 @@
+# One-shot private speech test runner (no public domain).
+# Start command overridden to the audio battery.
+
+[build]
+builder = "NIXPACKS"
+
+[deploy]
+startCommand = "node scripts/run-phase4e1-audio-battery.mjs"
+restartPolicyType = "NEVER"
