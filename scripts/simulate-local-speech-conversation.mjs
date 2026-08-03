@@ -341,8 +341,17 @@ async function runAudioMode({
       throw new Error('Caller fixture is not valid μ-law audio');
     }
 
-    // Wait until greeting finishes and lifecycle is listening.
-    await waitForListening(httpBase, streamSid, { timeoutMs: 90_000 });
+    const listening = await waitForListening(httpBase, streamSid, {
+      timeoutMs: 90_000,
+    });
+    console.error(
+      JSON.stringify({
+        listeningLifecycle: listening?.voiceLifecycle || null,
+        listeningOk: Boolean(listening?.voiceLifecycle),
+      }),
+    );
+    // Extra settle time after listening for STT websocket readiness.
+    await sleep(1000);
     const paced = await sendPacedMulaw(ws, streamSid, mulaw);
 
     const turn = await waitForTurn(httpBase, streamSid, {

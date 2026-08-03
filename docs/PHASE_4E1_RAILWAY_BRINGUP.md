@@ -134,39 +134,48 @@ OUTBOUND_TTS_PROVIDER=inherit
 
 ## Operational results
 
-_Filled during bring-up. Do not mark Phase 4E.1 complete until every acceptance gate passes._
+_Updated during bring-up. Phase 4E.1 acceptance is **not** complete until every gate is green._
 
 | Gate | Result |
 |------|--------|
-| STT healthy + `/readyz` | pending |
-| Kokoro healthy + `af_bella` | pending |
-| Piper healthy + Padmavathi | pending |
-| App readiness green | pending |
-| EN/TE real-audio scenarios | pending |
-| ≥10 EN + ≥10 TE latency runs | pending |
-| Failure tests | pending |
-| Public domains on speech services = 0 | pending |
-| `telephoneCalls` = 0 | pending |
-| Non-live verifier | pending |
+| STT healthy + `/readyz` | **pass** — Whisper Small + Silero ONNX baked (`whisper_ok`, `silero_copied_from_package`) |
+| Kokoro healthy + `af_bella` | **pass** (intermittent CPU timeouts under concurrent fixture load) |
+| Piper healthy + Padmavathi | **pass** — voices baked at revision `9f967d15…`, hashes verified |
+| App readiness green | **pass** when Kokoro reachable (`mode=local`, all three services ready) |
+| EN/TE real-audio scenarios | **blocked** — EN fixture generation hits Kokoro request timeouts; TE audio frames send but transcript often null before listening/STT settle |
+| ≥10 EN + ≥10 TE latency runs | **blocked** on scenario success above |
+| Failure tests | **partial** — non-live verifier + offline unit tests pass; live dependency failure drills incomplete |
+| Public domains on speech services = 0 | **pass** |
+| `telephoneCalls` = 0 | **pass** (safeguards + simulator contract) |
+| Non-live verifier | **pass** (`npm run verify:non-live`) |
 
 ### Image sizes / startup
 
 | Service | Image size | Startup duration | Notes |
 |---------|------------|------------------|-------|
-| speech-to-text | TBD | TBD | Confirm bake in build logs |
-| piper-tts | TBD | TBD | Confirm bake in build logs |
-| kokoro-tts | pinned v0.7.0 | TBD | |
+| speech-to-text | large (torch + small Whisper) | model load logged `whisper_ready` | Bake confirmed in build logs |
+| piper-tts | ~two 63.5 MB ONNX voices | `/info` 200 after start | Hash OK for both voices |
+| kokoro-tts | pinned `v0.7.0` | voices endpoint OK when healthy | CPU contention under hobby concurrency |
 
-### Latency (placeholder)
+### Deploy notes
 
-Separate English (Kokoro) and Telugu (Piper). Label cold vs warm.
+- Empty `speech-e2e` environment required a separate app service: `smartping-voice-stream-e2e`
+- Speech Docker services deploy via `railway up ./services/<name> --path-as-root` with in-service `railway.toml`
+- Private runner: `speech-test-runner` (no public domain) executes `scripts/run-phase4e1-audio-battery.mjs`
+- SSH into containers was unreliable from this agent environment
+
+### Latency (placeholder until successful turns)
+
+Observed STT speech-end→transcript samples while partially healthy: min≈10.4 s, median≈12.1 s, p95≈14.2 s (warm-ish, Kokoro TTS duration not yet measured successfully end-to-end).
 
 ## Remaining blockers for a telephone call
 
-1. Complete all Phase 4E.1 acceptance gates above
-2. Consented sandbox number + SmartPing sandbox review (Phase 4F)
-3. Explicit human approval to open live-call gates
+1. Stabilize Kokoro under concurrent synthesize (fixture + greeting/response) on Railway CPU — EN real-audio fixtures currently time out
+2. Prove TE/EN audio mode turns with non-null Faster-Whisper transcripts and correct TTS routing (≥10 each)
+3. Complete failure drills (STT/Kokoro/Piper unavailable) and document results
+4. Consented sandbox number + SmartPing sandbox review (Phase 4F)
+5. Explicit human approval to open live-call gates
 
 ## Go / no-go for Phase 4F
 
-**No-go** until every gate in §2 of the Phase 4E.1 brief is green.
+**No-go.** Speech services can be brought up privately and aggregate readiness can go green, but real-audio end-to-end acceptance gates are not all passing.
