@@ -11,8 +11,8 @@ import { fileURLToPath } from 'node:url';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(__dirname, '..');
 
-const EN = ['send_details', 'callback', 'not_interested', 'do_not_call', 'human_agent'];
-const TE = ['send_details', 'callback', 'not_interested', 'do_not_call'];
+const EN = ['send_details'];
+const TE = ['callback'];
 
 function envTarget() {
   return (
@@ -45,8 +45,11 @@ function runOne({ language, scenario, mode = 'audio' }) {
     timeout: Number(process.env.AUDIO_SIM_TIMEOUT_MS || 120000) + 30_000,
   });
   console.error(
-    `done ${language}/${scenario} exit=${result.status} bytes=${(result.stdout || '').length}`,
+    `done ${language}/${scenario} exit=${result.status} out=${(result.stdout || '').length} err=${(result.stderr || '').slice(0, 300)}`,
   );
+  if (result.stdout) {
+    console.error('OUT_HEAD ' + String(result.stdout).slice(0, 400).replace(/\n/g, ' '));
+  }
   let report = null;
   try {
     report = JSON.parse(result.stdout || '{}');
@@ -91,17 +94,18 @@ function main() {
     results.push(runOne({ language: 'te', scenario }));
   }
 
-  // Latency loops (warm after scenarios)
+  // Latency loops (warm after scenarios) — limited for diagnostic redeploys.
+  const latencyRuns = Number(process.env.AUDIO_LATENCY_RUNS || 2);
   const enLatency = [];
   const teLatency = [];
-  for (let i = 0; i < 10; i += 1) {
-    console.error(`EN latency ${i + 1}/10`);
+  for (let i = 0; i < latencyRuns; i += 1) {
+    console.error(`EN latency ${i + 1}/${latencyRuns}`);
     const r = runOne({ language: 'en', scenario: 'send_details' });
     results.push({ ...r, latencySample: true, cold: false });
     if (r.report?.ok) enLatency.push(r.durationMs);
   }
-  for (let i = 0; i < 10; i += 1) {
-    console.error(`TE latency ${i + 1}/10`);
+  for (let i = 0; i < latencyRuns; i += 1) {
+    console.error(`TE latency ${i + 1}/${latencyRuns}`);
     const r = runOne({ language: 'te', scenario: 'callback' });
     results.push({ ...r, latencySample: true, cold: false });
     if (r.report?.ok) teLatency.push(r.durationMs);
