@@ -146,6 +146,7 @@ export function createApp({
       pathname === '/api/summary' ||
       pathname === '/api/speech/readiness' ||
       pathname === '/api/speech/metrics' ||
+      pathname === '/api/speech/session-turn' ||
       pathname === '/api/speech/inject-transcript' ||
       pathname.startsWith('/api/outbound/') ||
       pathname.startsWith('/api/call-station/') ||
@@ -203,6 +204,70 @@ export function createApp({
         return sendJson(response, 200, {
           liveCallsEnabled: config.smartPing?.liveCallsEnabled === true,
           metrics: globalSpeechMetrics.snapshot(),
+        });
+      }
+
+      if (request.method === 'GET' && pathname === '/api/speech/session-turn') {
+        // Simulation-only observation (no audio, no secrets, no private URLs).
+        if (
+          config.smartPing?.liveCallsEnabled === true ||
+          config.smartPing?.singleCallEnabled === true ||
+          config.outbound?.dialerLive === true
+        ) {
+          return sendJson(response, 403, {
+            error: 'Session turn inspection disabled while live-call gates are open',
+            code: 'session_turn_forbidden',
+          });
+        }
+        if (!sessionManager) {
+          return sendJson(response, 503, { error: 'Session manager unavailable' });
+        }
+        const streamSid = String(url.searchParams.get('streamSid') || '').trim();
+        if (!streamSid) {
+          return sendJson(response, 400, {
+            error: 'streamSid is required',
+            code: 'invalid_session_turn',
+          });
+        }
+        const session = sessionManager.get(streamSid);
+        if (!session) {
+          return sendJson(response, 404, { error: 'Session not found' });
+        }
+        const timing = session.metadata?.turnTiming || {};
+        return sendJson(response, 200, {
+          ok: true,
+          streamSid,
+          transcript: session.metadata?.lastTranscript || null,
+          detectedLanguage:
+            session.metadata?.detectedLanguage ||
+            session.metadata?.lastTranscriptLanguage ||
+            null,
+          intent: session.metadata?.lastIntent || null,
+          ttsProvider: session.metadata?.ttsProvider || null,
+          ttsVoice: session.metadata?.ttsVoice || null,
+          sttProvider: session.metadata?.sttProvider || null,
+          voiceLifecycle: session.metadata?.voiceLifecycle || null,
+          speechStarted: Boolean(timing.vadSpeechStartedAt),
+          speechEnded: Boolean(timing.vadSpeechEndedAt),
+          botMediaOut: Number(session.stats?.mediaOut || 0),
+          completed: session.metadata?.voiceLifecycle === 'closed',
+          timing: {
+            speechDurationMs:
+              timing.vadSpeechStartedAt && timing.vadSpeechEndedAt
+                ? Date.parse(timing.vadSpeechEndedAt) -
+                  Date.parse(timing.vadSpeechStartedAt)
+                : null,
+            speechEndToTranscriptMs: timing.speechEndToTranscriptMs ?? null,
+            ttsDurationMs: timing.ttsDurationMs ?? null,
+            speechEndToBotAudioMs: timing.speechEndToFirstBotAudioMs ?? null,
+            turnDurationMs: timing.turnTotalMs ?? null,
+            vadSpeechStartedAt: timing.vadSpeechStartedAt ?? null,
+            vadSpeechEndedAt: timing.vadSpeechEndedAt ?? null,
+            transcriptReceivedAt: timing.transcriptReceivedAt ?? null,
+            playbackStartedAt: timing.playbackStartedAt ?? null,
+            playbackCompletedAt: timing.playbackCompletedAt ?? null,
+          },
+          telephoneCalls: 0,
         });
       }
 
@@ -280,6 +345,7 @@ export function createApp({
       const speechOpsOpen =
         pathname === '/api/speech/readiness' ||
         pathname === '/api/speech/metrics' ||
+        pathname === '/api/speech/session-turn' ||
         pathname === '/api/speech/inject-transcript';
       if (
         config.exposureMode === 'stream-only' &&

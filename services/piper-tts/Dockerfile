@@ -6,7 +6,8 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PIP_NO_CACHE_DIR=1 \
     PORT=5000 \
     PIPER_DATA_DIR=/models \
-    PIPER_DEFAULT_VOICE=te_IN-padmavathi-medium
+    PIPER_DEFAULT_VOICE=te_IN-padmavathi-medium \
+    PIPER_VOICES_REVISION=9f967d15e9ccdf43078586d1476ee70f314401bd
 
 WORKDIR /app
 
@@ -27,11 +28,21 @@ COPY notices ./notices
 RUN chmod +x start.sh scripts/*.py \
     && chown -R appuser:appuser /app
 
-# Optional build-arg to bake approved Telugu voices into the image.
-ARG DOWNLOAD_VOICES=false
-ARG PIPER_VOICES_REVISION=main
+# Staging default: bake approved Telugu voices (Padmavathi + Venkatesh).
+# Opt out for local/dev builds: --build-arg DOWNLOAD_VOICES=false
+# Pin exact HF revision (not floating main).
+ARG DOWNLOAD_VOICES=true
+ARG PIPER_VOICES_REVISION=9f967d15e9ccdf43078586d1476ee70f314401bd
 RUN if [ "$DOWNLOAD_VOICES" = "true" ]; then \
-      python scripts/download_voices.py --dest /models --revision "${PIPER_VOICES_REVISION}" ; \
+      echo "Baking Piper voices (DOWNLOAD_VOICES=true revision=${PIPER_VOICES_REVISION})" ; \
+      python scripts/download_voices.py \
+        --dest /models \
+        --revision "${PIPER_VOICES_REVISION}" \
+        --require-expected-hashes ; \
+      python scripts/verify_models.py --dest /models ; \
+      echo "Piper voice bake complete" ; \
+    else \
+      echo "Skipping Piper voice bake (DOWNLOAD_VOICES=false)" ; \
     fi \
     && chown -R appuser:appuser /models
 

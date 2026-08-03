@@ -5,9 +5,23 @@ PORT="${PORT:-5000}"
 DATA_DIR="${PIPER_DATA_DIR:-/models}"
 DEFAULT_VOICE="${PIPER_DEFAULT_VOICE:-te_IN-padmavathi-medium}"
 
+REQUIRED_FILES=(
+  "${DATA_DIR}/te_IN-padmavathi-medium.onnx"
+  "${DATA_DIR}/te_IN-padmavathi-medium.onnx.json"
+  "${DATA_DIR}/te_IN-venkatesh-medium.onnx"
+  "${DATA_DIR}/te_IN-venkatesh-medium.onnx.json"
+)
+
+for path in "${REQUIRED_FILES[@]}"; do
+  if [[ ! -f "${path}" ]]; then
+    echo "Missing required Piper model asset: ${path}" >&2
+    echo "Bake voices with DOWNLOAD_VOICES=true or mount /models" >&2
+    exit 1
+  fi
+done
+
 if [[ ! -f "${DATA_DIR}/${DEFAULT_VOICE}.onnx" ]]; then
   echo "Missing default voice model: ${DATA_DIR}/${DEFAULT_VOICE}.onnx" >&2
-  echo "Run: python scripts/download_voices.py --dest ${DATA_DIR}" >&2
   exit 1
 fi
 

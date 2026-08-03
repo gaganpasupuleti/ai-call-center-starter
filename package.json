@@ -16,6 +16,7 @@
     "test:piper-local": "node --env-file-if-exists=.env scripts/test-piper-local.mjs",
     "simulate:smartping-stream": "node --env-file-if-exists=.env scripts/smartping-stream-simulator.mjs",
     "simulate:local-speech": "node --env-file-if-exists=.env scripts/simulate-local-speech-conversation.mjs",
+    "verify:non-live": "node --env-file-if-exists=.env scripts/verify-non-live-environment.mjs",
     "call:smartping-single": "node --env-file-if-exists=.env scripts/place-test-call.mjs",
     "check": "node --check src/server.js && node --check src/app.js && node --check src/database.js && node --check public/app.js"
   },

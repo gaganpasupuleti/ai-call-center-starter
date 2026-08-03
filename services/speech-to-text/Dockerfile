@@ -5,6 +5,8 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \
     WHISPER_DOWNLOAD_ROOT=/models \
+    WHISPER_MODEL=small \
+    WHISPER_LOCAL_FILES_ONLY=true \
     STT_LOAD_MODEL_ON_STARTUP=true \
     PORT=8000
 
@@ -24,10 +26,19 @@ RUN pip install --upgrade pip \
 COPY app ./app
 COPY scripts ./scripts
 
-# Optional build-arg to bake models into the image.
-ARG DOWNLOAD_MODELS=false
+# Staging default: bake Faster-Whisper Small + Silero ONNX into the image.
+# Opt out for local/dev builds: --build-arg DOWNLOAD_MODELS=false
+ARG DOWNLOAD_MODELS=true
+ARG WHISPER_MODEL=small
 RUN if [ "$DOWNLOAD_MODELS" = "true" ]; then \
-      python scripts/download_models.py --download-root /models --silero-out /models/silero_vad.onnx ; \
+      echo "Baking STT models (DOWNLOAD_MODELS=true WHISPER_MODEL=${WHISPER_MODEL})" ; \
+      python scripts/download_models.py \
+        --model "${WHISPER_MODEL}" \
+        --download-root /models \
+        --silero-out /models/silero_vad.onnx ; \
+      echo "STT model bake complete" ; \
+    else \
+      echo "Skipping STT model bake (DOWNLOAD_MODELS=false)" ; \
     fi \
     && chown -R appuser:appuser /models
 

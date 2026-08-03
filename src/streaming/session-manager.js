@@ -481,6 +481,8 @@ export class StreamSessionManager {
     session.metadata.lastTranscript = String(event.text).slice(0, 2000);
     session.metadata.lastTranscriptLanguage = event.language || null;
     session.metadata.lastTranscriptAt = nowIso();
+    session.metadata.sttProvider =
+      event.provider || session.metadata.sttProvider || null;
     if (session.metadata.turnTiming) {
       session.metadata.turnTiming.transcriptReceivedAt = nowIso();
     }

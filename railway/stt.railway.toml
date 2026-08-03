@@ -1,6 +1,8 @@
 # Railway service config — speech-to-text (private only)
 # Dockerfile path: services/speech-to-text/Dockerfile
+# Root directory: repository root (Dockerfile paths are relative to repo root)
 # Do not attach a public domain.
+# Models are baked by default (DOWNLOAD_MODELS=true in Dockerfile).
 
 [build]
 builder = "DOCKERFILE"
@@ -12,6 +14,6 @@ watchPatterns = [
 
 [deploy]
 healthcheckPath = "/healthz"
-healthcheckTimeout = 120
+healthcheckTimeout = 300
 restartPolicyType = "ON_FAILURE"
 restartPolicyMaxRetries = 3

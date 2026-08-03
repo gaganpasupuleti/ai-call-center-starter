@@ -23,7 +23,22 @@ VOICE_PATHS = {
 }
 
 HF_REPO = "rhasspy/piper-voices"
-DEFAULT_REVISION = "main"
+# Exact commit inspected near Phase 4D hash recording (not floating main).
+DEFAULT_REVISION = "9f967d15e9ccdf43078586d1476ee70f314401bd"
+
+# Phase 4D recorded SHA-256 digests (must match after download).
+EXPECTED_SHA256 = {
+    "te_IN-padmavathi-medium": {
+        "model": "414aa5960d91ceb6e45bbdf8c27fdc71af09f205130d7be4e99470f3c2cfa57d",
+        "config": "6c86e4ee99d379815f78a75f23cdad62ccf50370062dd915c233d6e22de7109f",
+        "modelCard": "8cdccd0ca4c26d1e949431f03180bcf9eaeb3c013f627087c6a806a3f7487b07",
+    },
+    "te_IN-venkatesh-medium": {
+        "model": "dfaa5b7833cd48d946f3fe18c9c934aaa4e8590aac6922fddf34783a694c3c87",
+        "config": "59bad556763d1f24b3434201d7bdee275bb1a70db3e1c65d38e6c3d39b224343",
+        "modelCard": "1e72b79b6453653bd6c43722f80fb34f429dbeccaf18116480d6faa20b01e685",
+    },
+}
 
 
 def sha256_file(path: Path) -> str:
@@ -113,6 +128,19 @@ def download_voice(voice: str, dest: Path, revision: str) -> dict:
     }
 
 
+def verify_expected_hashes(voice: str, sha256: dict[str, str]) -> None:
+    expected = EXPECTED_SHA256.get(voice)
+    if not expected:
+        raise SystemExit(f"No expected hashes recorded for voice {voice}")
+    for kind, digest in expected.items():
+        actual = sha256.get(kind)
+        if actual != digest:
+            raise SystemExit(
+                f"Hash mismatch for {voice} {kind}: expected {digest}, got {actual}"
+            )
+    print(f"Hash OK for {voice}")
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Download approved Piper Telugu voices")
     parser.add_argument("--dest", default="models", help="Destination directory")
@@ -126,7 +154,19 @@ def main(argv: list[str] | None = None) -> int:
         default=",".join(APPROVED_VOICES),
         help="Comma-separated approved voice ids only",
     )
+    parser.add_argument(
+        "--require-expected-hashes",
+        action="store_true",
+        help="Fail if downloaded digests do not match Phase 4D recorded hashes",
+    )
     args = parser.parse_args(argv)
+
+    if args.revision == "main":
+        print(
+            "WARNING: floating revision 'main' is discouraged; "
+            f"prefer pinned {DEFAULT_REVISION}",
+            file=sys.stderr,
+        )
 
     dest = Path(args.dest)
     dest.mkdir(parents=True, exist_ok=True)
@@ -155,7 +195,10 @@ def main(argv: list[str] | None = None) -> int:
         except json.JSONDecodeError:
             pass
     for voice in requested:
-        manifest["voices"][voice] = download_voice(voice, dest, args.revision)
+        meta = download_voice(voice, dest, args.revision)
+        if args.require_expected_hashes:
+            verify_expected_hashes(voice, meta["sha256"])
+        manifest["voices"][voice] = meta
 
     manifest_path = dest / "voices.manifest.json"
     manifest_path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")

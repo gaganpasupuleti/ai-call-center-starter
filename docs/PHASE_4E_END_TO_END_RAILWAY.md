@@ -112,7 +112,13 @@ DTMF-only flow remains functional without deleting services.
 - Healthchecks are startup-only, not continuous monitoring
 - Phase 4F is the first controlled consented live SmartPing sandbox call
 
+## Phase 4E.1 follow-up
+
+Operational bring-up (baked models, private DNS readiness, `--mode audio` real-audio
+validation) is documented in [PHASE_4E1_RAILWAY_BRINGUP.md](./PHASE_4E1_RAILWAY_BRINGUP.md).
+Phase 4E alone (inject simulator) is insufficient to open Phase 4F.
+
 ## Next phase
 
 Phase 4F — Controlled consented SmartPing sandbox call and production-readiness review.
-Do not begin Phase 4F from this document alone.
+Do not begin Phase 4F until every Phase 4E.1 acceptance gate passes.
