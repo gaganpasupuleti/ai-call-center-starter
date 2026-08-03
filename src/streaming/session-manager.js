@@ -17,6 +17,10 @@ import {
 import { getOutboundPromptStore } from './outbound/prompt-store.js';
 import { englishLabelForDigit, formatTransferPhone } from './outbound/phone.js';
 import { StreamingSttManager } from './stt/streaming-stt-manager.js';
+import { VoiceConversationController } from './conversation/controller.js';
+import { ResponseActionExecutor } from './actions/response-action-executor.js';
+import { globalSpeechMetrics } from './conversation/metrics.js';
+import { clearConversationTimers } from './conversation/timers.js';
 
 const MESSAGE_END_HANGUP_MS = 10_000;
 
@@ -71,6 +75,48 @@ export class StreamSessionManager {
         : null);
     this.sessions = new Map();
     this.allSessions = new Set();
+    this.speechMetrics = globalSpeechMetrics;
+    this.actionExecutor = new ResponseActionExecutor({
+      repository,
+      liveCallsEnabled: appConfig?.smartPing?.liveCallsEnabled === true,
+      onTransferQueue: (session, queue) => this.transferToQueue(session, queue),
+      onEnableDtmf: (session) => {
+        session.metadata.interactive = true;
+        session.metadata.dtmfFallbackActive = true;
+      },
+    });
+    this.voiceConversation = new VoiceConversationController({
+      appConfig: appConfig || { voiceConversationEnabled: false },
+      pipeline,
+      sttStarter: (session) => this.#maybeStartStreamingStt(session, { force: true }),
+      sendMedia: (session, bytes) => this.sendMedia(session, bytes),
+      sendMark: (session, name) => this.sendMark(session, name),
+      hangup: (session) => this.hangupCall(session),
+      closeSession: (session, reason) => this.closeSession(session, reason),
+      actionExecutor: this.actionExecutor,
+      callStation,
+      metrics: this.speechMetrics,
+    });
+  }
+
+  async injectTranscript(session, event = {}) {
+    // Simulation escape hatch: do not wait for full greeting pacing in tests.
+    if (this.voiceConversation?.active?.()) {
+      const life = session.metadata?.voiceLifecycle;
+      if (
+        life === 'greeting_queued' ||
+        life === 'greeting_playing' ||
+        life === 'connecting'
+      ) {
+        this.voiceConversation.onBotAudioDrained(session, { kind: 'greeting' });
+      }
+    }
+    return this.#onStreamingTranscript(session, {
+      text: event.text,
+      language: event.language || 'en',
+      isFinal: true,
+      provider: event.provider || 'simulator',
+    });
   }
 
   get(streamSid) {
@@ -108,6 +154,7 @@ export class StreamSessionManager {
     };
     ws.__sessionRef = session;
     this.allSessions.add(session);
+    this.voiceConversation?.onSessionAttached?.(session);
     return session;
   }
 
@@ -200,6 +247,8 @@ export class StreamSessionManager {
 
   closeSession(session, reason = 'closed') {
     if (!session || session.state === STREAM_STATES.closed) return;
+    clearConversationTimers(session);
+    this.voiceConversation?.onSessionClose?.(session, reason);
     if (session.failsafeHangupTimer) {
       clearTimeout(session.failsafeHangupTimer);
       session.failsafeHangupTimer = null;
@@ -269,8 +318,20 @@ export class StreamSessionManager {
                 detail: null,
               });
             }
-            // Failsafe: cut the call 10s after the primary message finishes.
-            if (!session.metadata.failsafeHangupScheduled) {
+            const kind =
+              session.metadata.botPlaybackKind === 'response' ||
+              session.metadata.botPlaybackKind === 'system'
+                ? 'response'
+                : 'greeting';
+            const voiceHandled = this.voiceConversation?.onBotAudioDrained?.(
+              session,
+              { kind },
+            );
+            // Failsafe hang-up only for DTMF / non-voice conversation modes.
+            if (
+              !voiceHandled &&
+              !session.metadata.failsafeHangupScheduled
+            ) {
               this.#scheduleFailsafeHangup(session, MESSAGE_END_HANGUP_MS, 'message_ended');
             }
           }
@@ -300,6 +361,13 @@ export class StreamSessionManager {
       this.callStation?.onStreamStarted?.(session, playback);
       this.#maybeStartStreamingStt(session);
     }
+    if (
+      this.voiceConversation?.active?.() &&
+      (playback?.enqueuedChunks || 0) === 0 &&
+      !playback?.error
+    ) {
+      this.voiceConversation.enterListening(session);
+    }
     return { ok: true, stream: record, playback, duplicateStart: alreadyStarted };
   }
 
@@ -310,12 +378,24 @@ export class StreamSessionManager {
     );
   }
 
-  #maybeStartStreamingStt(session) {
+  #maybeStartStreamingStt(session, { force = false } = {}) {
     if (!this.#usesStreamingStt()) return;
+    if (session.metadata.sttStarted === true) return;
+
+    // Voice conversation: defer STT until greeting finishes (enterListening).
     if (
-      isFixedWelcomeMode(this.config) ||
-      session.metadata.playbackMode === 'outbound-tts' ||
-      session.metadata.customAudioPlayed
+      !force &&
+      this.voiceConversation?.shouldDeferSttUntilListening?.()
+    ) {
+      session.metadata.sttStatus = 'deferred_until_listening';
+      return;
+    }
+
+    if (
+      !force &&
+      (isFixedWelcomeMode(this.config) ||
+        session.metadata.playbackMode === 'outbound-tts' ||
+        session.metadata.customAudioPlayed)
     ) {
       session.metadata.sttStatus = 'skipped_playback_mode';
       return;
@@ -325,6 +405,7 @@ export class StreamSessionManager {
     session.metadata.sttStatus = 'connecting';
     session.metadata.speechActive = false;
     session.metadata.transcriptionActive = false;
+    session.metadata.sttStarted = true;
     const streamSid = session.streamSid;
     this.sttManager
       .startSession({
@@ -339,9 +420,11 @@ export class StreamSessionManager {
           if (event?.type === 'speech_started') {
             session.metadata.speechActive = true;
             session.metadata.sttStatus = 'speech';
+            this.voiceConversation?.onSpeechStarted?.(session);
           } else if (event?.type === 'speech_ended') {
             session.metadata.speechActive = false;
             session.metadata.sttStatus = 'transcribing';
+            this.voiceConversation?.onSpeechEnded?.(session);
           } else if (event?.type === 'ready') {
             session.metadata.sttStatus = 'ready';
           } else if (event?.type === 'no_speech') {
@@ -353,6 +436,7 @@ export class StreamSessionManager {
           if (session.state === STREAM_STATES.closed) return;
           session.metadata.lastSttError = err?.code || 'stt_error';
           session.metadata.sttStatus = 'error';
+          this.speechMetrics?.inc?.('sttConnectionFailures');
         },
       })
       .then(() => {
@@ -365,6 +449,7 @@ export class StreamSessionManager {
         if (session.state === STREAM_STATES.closed) return;
         session.metadata.lastSttError = err?.code || 'stt_connect_failed';
         session.metadata.sttStatus = 'error';
+        this.speechMetrics?.inc?.('sttConnectionFailures');
       });
   }
 
@@ -372,10 +457,21 @@ export class StreamSessionManager {
     if (!session || session.state === STREAM_STATES.closed) return;
     if (!event?.text) return;
 
+    if (
+      this.voiceConversation?.active?.() &&
+      !this.voiceConversation.canAcceptTranscript(session)
+    ) {
+      this.voiceConversation.rejectExtraTranscript(session);
+      return;
+    }
+
     // At most one in-flight transcript handler; keep a single pending slot.
     if (session.metadata.transcriptionActive) {
-      if (!session.metadata.pendingTranscript) {
+      const maxPending = Number(this.appConfig?.voicePendingTranscriptsMax ?? 1);
+      if (!session.metadata.pendingTranscript && maxPending >= 1) {
         session.metadata.pendingTranscript = event;
+      } else {
+        this.voiceConversation?.rejectExtraTranscript?.(session);
       }
       return;
     }
@@ -385,6 +481,9 @@ export class StreamSessionManager {
     session.metadata.lastTranscript = String(event.text).slice(0, 2000);
     session.metadata.lastTranscriptLanguage = event.language || null;
     session.metadata.lastTranscriptAt = nowIso();
+    if (session.metadata.turnTiming) {
+      session.metadata.turnTiming.transcriptReceivedAt = nowIso();
+    }
 
     try {
       if (!session.metadata || typeof session.metadata !== 'object') {
@@ -405,11 +504,16 @@ export class StreamSessionManager {
           callSid: session.callSid,
           customParameters: session.customParameters,
           metadata: session.metadata,
+          state: session.state,
         },
       );
+      if (this.voiceConversation?.active?.()) {
+        await this.voiceConversation.processTurn(session, result);
+      }
       this.#applyPipelineResult(session, result);
     } catch {
       session.metadata.lastSttError = 'stt_response_failed';
+      this.speechMetrics?.inc?.('sttTranscriptionFailures');
     } finally {
       session.metadata.transcriptionActive = false;
       session.metadata.sttStatus = 'ready';
@@ -456,12 +560,29 @@ export class StreamSessionManager {
       session.metadata.ttsStatus = 'error';
     }
     if (result.audio) {
+      session.metadata.botPlaybackKind =
+        session.metadata.botPlaybackKind || 'response';
+      session.metadata.welcomePlayed = true;
+      session.metadata.welcomeCompleted = false;
       this.sendMedia(session, result.audio);
       this.sendMark(session, `tts-${session.stats.mediaOut}`);
     }
-    for (const action of result.actions ?? []) {
-      if (action.type === 'transfer_queue') {
-        this.transferToQueue(session, action.queue || 'default');
+
+    // Legacy transfer path when voice conversation is off.
+    if (!this.voiceConversation?.active?.()) {
+      for (const action of result.actions ?? []) {
+        if (action.type === 'transfer_queue') {
+          this.transferToQueue(session, action.queue || 'default');
+        }
+      }
+    } else if (result.actionOutcome?.transferRequested) {
+      // Simulated in non-live mode by action executor; live path optional.
+      if (this.appConfig?.smartPing?.liveCallsEnabled === true) {
+        const queue =
+          session.metadata.transferQueue ||
+          result.actions?.find((a) => a.type === 'transfer_queue')?.queue ||
+          'default';
+        this.transferToQueue(session, queue);
       }
     }
   }
@@ -492,6 +613,7 @@ export class StreamSessionManager {
           (built.bytes.length / 8000).toFixed(3),
         );
         session.metadata.audioQueuedAt = nowIso();
+        this.voiceConversation?.onGreetingQueued?.(session);
         this.promptStore.markConsumed(appCallId);
         if (built.prompt.interactive === true) {
           session.metadata.interactive = true;
@@ -553,6 +675,7 @@ export class StreamSessionManager {
       session.metadata.welcomeBytes = welcome.byteLength;
       session.metadata.welcomeDurationSeconds = welcome.durationSeconds;
       session.metadata.audioQueuedAt = nowIso();
+      this.voiceConversation?.onGreetingQueued?.(session);
       this.callStation?.markAudioQueued?.(session, {
         chunks: enqueuedChunks,
         durationSeconds: welcome.durationSeconds,
@@ -592,17 +715,24 @@ export class StreamSessionManager {
     this.#persistEvent(session, event, { validationResult: 'ok' });
     this.callStation?.onProtocolEvent?.(session, 'media');
 
-    // Fixed welcome or dialer TTS: do not run mock STT/TTS.
-    if (
-      isFixedWelcomeMode(this.config) ||
-      session.metadata.playbackMode === 'outbound-tts' ||
-      session.metadata.customAudioPlayed
-    ) {
-      return {
-        ok: true,
-        playbackMode: session.metadata.playbackMode || 'fixed-welcome',
-        pipelineSkipped: true,
-      };
+    // Voice conversation: explicit lifecycle gates replace hard outbound skip.
+    const voiceForward = this.voiceConversation?.shouldForwardCallerAudio?.(session);
+    if (voiceForward === false) {
+      return { ok: true, suppressed: true, reason: 'bot_speaking_or_not_listening' };
+    }
+    if (voiceForward !== true) {
+      // Fixed welcome or dialer TTS: do not run mock STT/TTS.
+      if (
+        isFixedWelcomeMode(this.config) ||
+        session.metadata.playbackMode === 'outbound-tts' ||
+        session.metadata.customAudioPlayed
+      ) {
+        return {
+          ok: true,
+          playbackMode: session.metadata.playbackMode || 'fixed-welcome',
+          pipelineSkipped: true,
+        };
+      }
     }
 
     // Pass real session.metadata so conversation state stays per-call (not a copy).
@@ -616,13 +746,23 @@ export class StreamSessionManager {
       return { ok: true, streamingStt: true };
     }
 
+    // Voice conversation + mock STT: do not auto-script from paced media.
+    // Use inject-transcript (simulator) or replace mock STT with real streaming STT.
+    if (this.voiceConversation?.active?.()) {
+      return { ok: true, deferredMockStt: true };
+    }
+
     const result = await this.pipeline.handleInboundAudio(event.payload, {
       streamSid: session.streamSid,
       callSid: session.callSid,
       customParameters: session.customParameters,
       metadata: session.metadata,
+      state: session.state,
     });
 
+    if (this.voiceConversation?.active?.()) {
+      await this.voiceConversation.processTurn(session, result);
+    }
     this.#applyPipelineResult(session, result);
 
     return { ok: true, result };

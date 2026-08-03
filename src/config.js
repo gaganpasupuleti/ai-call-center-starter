@@ -98,6 +98,14 @@ function normalizeOutboundTtsProvider(value) {
   );
 }
 
+function normalizeVoiceInteractionMode(value) {
+  const mode = String(value ?? 'dtmf').trim().toLowerCase();
+  if (mode === 'dtmf' || mode === 'voice' || mode === 'voice-dtmf') return mode;
+  throw new Error(
+    `Invalid VOICE_INTERACTION_MODE "${value}". Use dtmf, voice, or voice-dtmf.`,
+  );
+}
+
 export function getConfig(overrides = {}) {
   const cwd = process.cwd();
   const host = overrides.host ?? process.env.HOST ?? '127.0.0.1';
@@ -238,6 +246,36 @@ export function getConfig(overrides = {}) {
     voiceTtsProvider: normalizeVoiceTtsProvider(
       overrides.voiceTtsProvider ?? process.env.VOICE_TTS_PROVIDER,
     ),
+    voiceConversationEnabled:
+      overrides.voiceConversationEnabled ??
+      envFlag('VOICE_CONVERSATION_ENABLED', false),
+    voiceInteractionMode: normalizeVoiceInteractionMode(
+      overrides.voiceInteractionMode ?? process.env.VOICE_INTERACTION_MODE,
+    ),
+    voiceMaxTurns: Number(
+      overrides.voiceMaxTurns ?? process.env.VOICE_MAX_TURNS ?? 6,
+    ),
+    voiceListenTimeoutMs: Number(
+      overrides.voiceListenTimeoutMs ??
+        process.env.VOICE_LISTEN_TIMEOUT_MS ??
+        12_000,
+    ),
+    voiceIdleHangupMs: Number(
+      overrides.voiceIdleHangupMs ?? process.env.VOICE_IDLE_HANGUP_MS ?? 30_000,
+    ),
+    voiceResponseTimeoutMs: Number(
+      overrides.voiceResponseTimeoutMs ??
+        process.env.VOICE_RESPONSE_TIMEOUT_MS ??
+        25_000,
+    ),
+    voicePendingTranscriptsMax: Number(
+      overrides.voicePendingTranscriptsMax ??
+        process.env.VOICE_PENDING_TRANSCRIPTS_MAX ??
+        1,
+    ),
+    voiceIgnoreInputWhileSpeaking:
+      overrides.voiceIgnoreInputWhileSpeaking ??
+      envFlag('VOICE_IGNORE_INPUT_WHILE_SPEAKING', true),
     kokoro: {
       baseUrl:
         overrides.kokoro?.baseUrl ??
@@ -427,6 +465,8 @@ export function getPublicSettings(config, providerName) {
     voiceResponseEngine: config.voiceResponseEngine || 'deterministic',
     voiceSttProvider: config.voiceSttProvider || 'mock',
     voiceTtsProvider: config.voiceTtsProvider || 'mock',
+    voiceConversationEnabled: config.voiceConversationEnabled === true,
+    voiceInteractionMode: config.voiceInteractionMode || 'dtmf',
     kokoroConfigured: Boolean(config.kokoro?.baseUrl),
     kokoroDefaultVoice: config.kokoro?.defaultVoice || 'af_bella',
     piperConfigured: Boolean(config.piper?.baseUrl),

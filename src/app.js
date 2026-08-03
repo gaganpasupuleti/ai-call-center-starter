@@ -54,6 +54,8 @@ import {
 } from './streaming/tts/mulaw-encode.js';
 import { maskPhone } from './streaming/call-station.js';
 import { KOKORO_DEFAULT_VOICE } from './streaming/tts/kokoro-voices.js';
+import { getSpeechReadiness } from './streaming/conversation/readiness.js';
+import { globalSpeechMetrics } from './streaming/conversation/metrics.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const publicDirectory = path.resolve(__dirname, '..', 'public');
@@ -142,6 +144,9 @@ export function createApp({
       pathname === '/api/settings' ||
       pathname === '/api/dashboard' ||
       pathname === '/api/summary' ||
+      pathname === '/api/speech/readiness' ||
+      pathname === '/api/speech/metrics' ||
+      pathname === '/api/speech/inject-transcript' ||
       pathname.startsWith('/api/outbound/') ||
       pathname.startsWith('/api/call-station/') ||
       pathname.startsWith('/api/leads') ||
@@ -189,6 +194,62 @@ export function createApp({
         });
       }
 
+      if (request.method === 'GET' && pathname === '/api/speech/readiness') {
+        const readiness = await getSpeechReadiness(config);
+        return sendJson(response, 200, readiness);
+      }
+
+      if (request.method === 'GET' && pathname === '/api/speech/metrics') {
+        return sendJson(response, 200, {
+          liveCallsEnabled: config.smartPing?.liveCallsEnabled === true,
+          metrics: globalSpeechMetrics.snapshot(),
+        });
+      }
+
+      if (request.method === 'POST' && pathname === '/api/speech/inject-transcript') {
+        // Simulation-only: never available when live telephone gates are open.
+        if (
+          config.smartPing?.liveCallsEnabled === true ||
+          config.smartPing?.singleCallEnabled === true ||
+          config.outbound?.dialerLive === true
+        ) {
+          return sendJson(response, 403, {
+            error: 'Transcript inject disabled while live-call gates are open',
+            code: 'inject_forbidden',
+          });
+        }
+        if (!sessionManager) {
+          return sendJson(response, 503, { error: 'Session manager unavailable' });
+        }
+        const body = await readJson(request);
+        const streamSid = String(body.streamSid || '').trim();
+        const text = String(body.text || '').trim().slice(0, 2000);
+        const language = body.language === 'te' ? 'te' : 'en';
+        if (!streamSid || !text) {
+          return sendJson(response, 400, {
+            error: 'streamSid and text are required',
+            code: 'invalid_inject',
+          });
+        }
+        const session = sessionManager.get(streamSid);
+        if (!session) {
+          return sendJson(response, 404, { error: 'Session not found' });
+        }
+        await sessionManager.injectTranscript?.(session, {
+          text,
+          language,
+          provider: body.provider || 'simulator',
+        });
+        return sendJson(response, 200, {
+          ok: true,
+          streamSid,
+          intent: session.metadata?.lastIntent || null,
+          ttsProvider: session.metadata?.ttsProvider || null,
+          voiceLifecycle: session.metadata?.voiceLifecycle || null,
+          telephoneCalls: 0,
+        });
+      }
+
       if (request.method === 'POST' && pathname === webhookPath) {
         return handleSmartPingCallStatusWebhook({
           request,
@@ -216,10 +277,16 @@ export function createApp({
 
       const dialerSurfaceOpen =
         config.outbound?.dialerLive === true && isOutboundDialerPath(pathname);
+      const speechOpsOpen =
+        pathname === '/api/speech/readiness' ||
+        pathname === '/api/speech/metrics' ||
+        pathname === '/api/speech/inject-transcript';
       if (
         config.exposureMode === 'stream-only' &&
         !isAuthenticatedStreamCommand &&
-        !dialerSurfaceOpen
+        !dialerSurfaceOpen &&
+        !speechOpsOpen &&
+        pathname !== '/healthz'
       ) {
         return sendJson(response, 404, { error: 'Not found' });
       }

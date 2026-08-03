@@ -1,0 +1,17 @@
+# Railway service config — speech-to-text (private only)
+# Dockerfile path: services/speech-to-text/Dockerfile
+# Do not attach a public domain.
+
+[build]
+builder = "DOCKERFILE"
+dockerfilePath = "services/speech-to-text/Dockerfile"
+watchPatterns = [
+  "services/speech-to-text/**",
+  "railway/stt.railway.toml"
+]
+
+[deploy]
+healthcheckPath = "/healthz"
+healthcheckTimeout = 120
+restartPolicyType = "ON_FAILURE"
+restartPolicyMaxRetries = 3

@@ -69,6 +69,24 @@ server.listen(config.port, config.host, () => {
   console.log(
     `SmartPing dry-run=${config.smartPing.dryRun !== false} liveCalls=${config.smartPing.liveCallsEnabled === true} streamAuth=${config.smartPing.streamAuthMode}`,
   );
+  if (config.voiceConversationEnabled === true) {
+    if (
+      config.smartPing.liveCallsEnabled !== true &&
+      config.outbound?.dialerLive !== true
+    ) {
+      console.warn(
+        'Voice conversation enabled for simulation/non-live mode.',
+      );
+    }
+    if (
+      config.smartPing.liveCallsEnabled === true ||
+      config.smartPing.singleCallEnabled === true
+    ) {
+      console.error(
+        'Refusing contradictory live-call settings with voice conversation staging defaults. Keep SMARTPING_LIVE_CALLS_ENABLED=false for Phase 4E.',
+      );
+    }
+  }
 });
 
 function shutdown(signal) {

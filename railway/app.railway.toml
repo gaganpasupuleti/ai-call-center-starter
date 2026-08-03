@@ -1,0 +1,21 @@
+# Railway service config — call-center-app (repository root)
+# Deploy with: railway up --service call-center-app --environment speech-e2e
+# Or configure Root Directory / Config File in the Railway dashboard.
+
+[build]
+builder = "NIXPACKS"
+watchPatterns = [
+  "src/**",
+  "public/**",
+  "scripts/**",
+  "package.json",
+  "package-lock.json",
+  "railway/app.railway.toml"
+]
+
+[deploy]
+startCommand = "npm run start:prod"
+healthcheckPath = "/healthz"
+healthcheckTimeout = 30
+restartPolicyType = "ON_FAILURE"
+restartPolicyMaxRetries = 3

@@ -1,0 +1,18 @@
+# Railway service config — piper-tts (private only)
+# Dockerfile path: services/piper-tts/Dockerfile
+# Do not attach a public domain.
+# Bake voices with build-arg DOWNLOAD_VOICES=true or mount /models.
+
+[build]
+builder = "DOCKERFILE"
+dockerfilePath = "services/piper-tts/Dockerfile"
+watchPatterns = [
+  "services/piper-tts/**",
+  "railway/piper.railway.toml"
+]
+
+[deploy]
+healthcheckPath = "/info"
+healthcheckTimeout = 90
+restartPolicyType = "ON_FAILURE"
+restartPolicyMaxRetries = 3
