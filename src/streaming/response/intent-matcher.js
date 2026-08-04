@@ -47,6 +47,7 @@ export function softenTeluguAsr(text) {
 export function softenNotInterestedTruncation(text) {
   let t = String(text ?? '');
   const replacements = [
+    [/\bi\s+am\s+not\s+a-?\b/gi, 'i am not interested'],
     [/\bi\s+am\s+not\s+in\b/gi, 'i am not interested'],
     [/\bi'?m\s+not\s+in\b/gi, 'i am not interested'],
     [/\bnot\s+interest\b/gi, 'not interested'],
