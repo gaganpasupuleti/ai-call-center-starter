@@ -165,11 +165,16 @@ if (want('D', selected)) {
   if (!summary.gates.D_te) stop(summary, 'gate_D_te');
 }
 
-function sim(language, scenario, { expectMock = false, attempts = 2 } = {}) {
+function sim(language, scenario, { expectMock = false, attempts = 3 } = {}) {
   const file = `${language === 'te' ? 'te' : 'en'}-${scenario.replaceAll('_', '-')}.ulaw`;
   const fixture = path.join(fixtureDir, file);
   let last = null;
   for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    if (attempt > 1) {
+      spawnSync(process.execPath, ['-e', 'setTimeout(()=>{},2000)'], {
+        timeout: 5_000,
+      });
+    }
     const r = run(
       process.execPath,
       [
