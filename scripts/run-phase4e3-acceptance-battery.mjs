@@ -190,10 +190,12 @@ function sim(language, scenario, { expectMock = false } = {}) {
     { timeout: 180_000 },
   );
   const j = r.json || {};
-  const mockOk = !expectMock || j.ttsProvider === 'mock';
+  const provider = String(j.ttsProvider || '');
+  const mockOk =
+    !expectMock || provider === 'mock' || provider === 'mock-tts' || provider.includes('mock');
   const realOk =
     expectMock ||
-    (j.ttsProvider === 'piper-local' &&
+    (provider === 'piper-local' &&
       (language === 'en'
         ? j.ttsVoice === 'en_US-libritts_r-medium' ||
           String(j.ttsVoice || '').includes('libritts')
@@ -205,6 +207,7 @@ function sim(language, scenario, { expectMock = false } = {}) {
       j.ok === true &&
       Boolean(j.actualTranscript) &&
       Boolean(j.intent) &&
+      String(j.intent).toUpperCase() !== 'UNKNOWN' &&
       mockOk &&
       (expectMock || realOk) &&
       (j.telephoneCalls ?? 0) === 0,
@@ -222,6 +225,22 @@ function sim(language, scenario, { expectMock = false } = {}) {
 
 if (want('C', selected)) {
   console.error('Gate C — real STT + mock TTS (app must be VOICE_TTS_PROVIDER=mock)');
+  const readinessUrl =
+    process.env.SPEECH_READINESS_URL ||
+    'http://smartping-voice-stream-e2e.railway.internal:8080/api/speech/readiness';
+  try {
+    const readyRes = await fetch(readinessUrl, { signal: AbortSignal.timeout(10_000) });
+    const readyJson = await readyRes.json();
+    summary.readinessBeforeC = { mode: readyJson.mode, ready: readyJson.ready };
+    if (readyJson.mode !== 'mock' || readyJson.ready !== true) {
+      summary.gates.C_preflight = false;
+      stop(summary, 'gate_C_preflight_not_mock');
+    }
+    summary.gates.C_preflight = true;
+  } catch (err) {
+    summary.readinessBeforeC = { error: String(err?.message || err) };
+    stop(summary, 'gate_C_preflight_unreachable');
+  }
   const enScenarios = [
     'send_details',
     'callback',
