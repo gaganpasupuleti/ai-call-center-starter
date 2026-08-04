@@ -171,9 +171,7 @@ function sim(language, scenario, { expectMock = false, attempts = 3 } = {}) {
   let last = null;
   for (let attempt = 1; attempt <= attempts; attempt += 1) {
     if (attempt > 1) {
-      spawnSync(process.execPath, ['-e', 'setTimeout(()=>{},2000)'], {
-        timeout: 5_000,
-      });
+      spawnSync('sleep', ['2'], { timeout: 5_000 });
     }
     const r = run(
       process.execPath,
