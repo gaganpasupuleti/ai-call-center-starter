@@ -39,8 +39,17 @@ export const INTENTS_EN = {
       'never call me',
       'stop contacting me',
     ],
-    requiredKeywords: [['do', 'not', 'call'], ['dont', 'call'], ['stop', 'calling'], ['remove', 'number'], ['delete', 'number']],
-    optionalKeywords: ['again', 'never', 'contact'],
+    requiredKeywords: [
+      ['do', 'not', 'call'],
+      ['dont', 'call'],
+      ['not', 'call'],
+      ['not', 'call', 'me'],
+      ['not', 'call', 'again'],
+      ['stop', 'calling'],
+      ['remove', 'number'],
+      ['delete', 'number'],
+    ],
+    optionalKeywords: ['again', 'never', 'contact', 'me'],
   },
   NOT_INTERESTED: {
     phrases: [
