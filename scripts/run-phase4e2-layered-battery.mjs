@@ -179,41 +179,46 @@ if (shouldRun('B')) {
 }
 
 if (shouldRun('D')) {
-  console.error('Gate D — Kokoro concurrency 1 then 2');
-  const k1 = run(
+  console.error('Gate D — Piper English + Telugu concurrency 1 (Kokoro CPU not required)');
+  const en = run(
     process.execPath,
     [
-      path.join(root, 'scripts/test-kokoro-stability.mjs'),
+      path.join(root, 'scripts/test-piper-stability.mjs'),
+      '--language',
+      'en',
       '--requests',
-      String(process.env.KOKORO_STABILITY_REQUESTS || 20),
+      String(process.env.PIPER_STABILITY_REQUESTS || 20),
       '--concurrency',
       '1',
     ],
-    { timeout: 45 * 60_000 },
+    { timeout: 15 * 60_000 },
   );
-  summary.kokoro = {
-    concurrency1: k1.json,
-    concurrency1Status: k1.status,
-    concurrency1Stderr: String(k1.stderr || '').slice(-400),
-  };
-  summary.gates.D_kokoro_c1 = k1.json?.ok === true;
-  if (!summary.gates.D_kokoro_c1) stop(summary, 'gate_D_kokoro_c1');
-  const k2 = run(
+  const te = run(
     process.execPath,
     [
-      path.join(root, 'scripts/test-kokoro-stability.mjs'),
+      path.join(root, 'scripts/test-piper-stability.mjs'),
+      '--language',
+      'te',
       '--requests',
-      '10',
+      String(process.env.PIPER_STABILITY_REQUESTS || 20),
       '--concurrency',
-      '2',
+      '1',
     ],
-    { timeout: 30 * 60_000 },
+    { timeout: 15 * 60_000 },
   );
-  summary.kokoro.concurrency2 = k2.json;
-  summary.gates.D_kokoro_c2 = k2.json?.ok === true;
+  summary.piper = { englishC1: en.json, teluguC1: te.json };
+  summary.kokoro = {
+    disposition: 'optional_not_approved_for_cpu_runtime',
+    kokoro_cpu_runtime_accepted: false,
+    reason: 'synthesis_latency_exceeds_live_call_limit',
+  };
+  summary.gates.D_piper_en = en.json?.ok === true;
+  summary.gates.D_piper_te = te.json?.ok === true;
+  if (!summary.gates.D_piper_en) stop(summary, 'gate_D_piper_en');
+  if (!summary.gates.D_piper_te) stop(summary, 'gate_D_piper_te');
 } else {
-  summary.gates.D_kokoro_c1 = 'skipped';
-  summary.gates.D_kokoro_c2 = 'skipped';
+  summary.gates.D_piper_en = 'skipped';
+  summary.gates.D_piper_te = 'skipped';
 }
 
 const target =

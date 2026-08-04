@@ -51,7 +51,7 @@ export const SCENARIOS = {
 };
 
 const EXPECTED_TTS = {
-  en: { provider: 'kokoro-local', voice: 'af_bella' },
+  en: { provider: 'piper-local', voice: 'en_US-libritts_r-medium' },
   te: { provider: 'piper-local', voice: 'te_IN-padmavathi-medium' },
 };
 
@@ -513,7 +513,8 @@ async function main() {
     args.mode === 'inject'
       ? true
       : turnResult.ttsProvider === expectedTts.provider ||
-        turnResult.ttsProvider === 'mock';
+        turnResult.ttsProvider === 'mock' ||
+        turnResult.ttsProvider === 'precomputed-local';
   const mockRejected =
     args.mode === 'audio' &&
     process.env.REQUIRE_REAL_TTS === 'true' &&

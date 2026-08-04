@@ -12,6 +12,7 @@ from pathlib import Path
 APPROVED_VOICES = (
     "te_IN-padmavathi-medium",
     "te_IN-venkatesh-medium",
+    "en_US-libritts_r-medium",
 )
 
 

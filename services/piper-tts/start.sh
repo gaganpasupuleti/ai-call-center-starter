@@ -10,6 +10,8 @@ REQUIRED_FILES=(
   "${DATA_DIR}/te_IN-padmavathi-medium.onnx.json"
   "${DATA_DIR}/te_IN-venkatesh-medium.onnx"
   "${DATA_DIR}/te_IN-venkatesh-medium.onnx.json"
+  "${DATA_DIR}/en_US-libritts_r-medium.onnx"
+  "${DATA_DIR}/en_US-libritts_r-medium.onnx.json"
 )
 
 for path in "${REQUIRED_FILES[@]}"; do

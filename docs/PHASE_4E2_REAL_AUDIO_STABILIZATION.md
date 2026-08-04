@@ -151,13 +151,13 @@ Not yet executed on Railway in this run. Local rollback config + `npm run verify
 
 ## Remaining blockers
 
-1. **Kokoro CPU latency** — ~70–110 s per short `af_bella` synth on current Railway plan (NNPACK unsupported). Blocks a 30 s conversational TTS timeout and makes a 20-request concurrency-1 battery take ~30–40 minutes.
-2. **Gate D / E / F** — not yet green in the latest runner cycle (Gate D previously killed by a 180 s spawn timeout; timeout raised to 45 min; fixture prep must complete again on each ephemeral runner).
+1. **Kokoro CPU latency** — ~70–110 s per short `af_bella` synth on current Railway plan (NNPACK unsupported). **Resolved for live path by Phase 4E.3 `local-cpu` (Piper English)**; Kokoro remains optional/offline only.
+2. **Gate D / E / F (4E.2 Kokoro path)** — superseded by 4E.3 Piper Gate D/E/F; see [PHASE_4E3_CPU_SAFE_ENGLISH_TTS.md](./PHASE_4E3_CPU_SAFE_ENGLISH_TTS.md).
 3. **Failure drills** — not yet executed on Railway after a full EN/TE pass.
 4. **App var-triggered redeploys** — occasional FAILED deploys when variables change; latest app deploy SUCCESS and readiness green.
 
 ## Go / no-go for Phase 4F
 
-**Current decision: NO-GO.**
+**Current decision: NO-GO** (await Phase 4E.3 Piper Gates C–F).
 
-Gates A (fixtures) and B (direct STT finalize-by-silence) are proven on Railway. Full-stack English/Telugu acceptance, Kokoro sequential stability (20×), failure drills, and a sustainable ≤30 s TTS path are not complete.
+Gates A (fixtures) and B (direct STT finalize-by-silence) are proven on Railway. Full-stack English/Telugu acceptance continues under `VOICE_TTS_PROVIDER=local-cpu`.

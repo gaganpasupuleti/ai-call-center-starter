@@ -14,19 +14,21 @@ from pathlib import Path
 APPROVED_VOICES = (
     "te_IN-padmavathi-medium",
     "te_IN-venkatesh-medium",
+    "en_US-libritts_r-medium",
 )
 
 # Path layout under rhasspy/piper-voices
 VOICE_PATHS = {
     "te_IN-padmavathi-medium": "te/te_IN/padmavathi/medium",
     "te_IN-venkatesh-medium": "te/te_IN/venkatesh/medium",
+    "en_US-libritts_r-medium": "en/en_US/libritts_r/medium",
 }
 
 HF_REPO = "rhasspy/piper-voices"
 # Exact commit inspected near Phase 4D hash recording (not floating main).
 DEFAULT_REVISION = "9f967d15e9ccdf43078586d1476ee70f314401bd"
 
-# Phase 4D recorded SHA-256 digests (must match after download).
+# Recorded SHA-256 digests (must match after download).
 EXPECTED_SHA256 = {
     "te_IN-padmavathi-medium": {
         "model": "414aa5960d91ceb6e45bbdf8c27fdc71af09f205130d7be4e99470f3c2cfa57d",
@@ -37,6 +39,11 @@ EXPECTED_SHA256 = {
         "model": "dfaa5b7833cd48d946f3fe18c9c934aaa4e8590aac6922fddf34783a694c3c87",
         "config": "59bad556763d1f24b3434201d7bdee275bb1a70db3e1c65d38e6c3d39b224343",
         "modelCard": "1e72b79b6453653bd6c43722f80fb34f429dbeccaf18116480d6faa20b01e685",
+    },
+    "en_US-libritts_r-medium": {
+        "model": "10bb85e071d616fcf4071f369f1799d0491492ab3c5d552ec19fb548fac13195",
+        "config": "b471dc60d2d8335e819c393d196d6fbf792817f40051257b269878505bc9afb3",
+        "modelCard": "0ccde6927e5bb4d743f4ea39618a9387ba18cca3351220a8a9cfdbc68b30fcb9",
     },
 }
 
@@ -142,7 +149,9 @@ def verify_expected_hashes(voice: str, sha256: dict[str, str]) -> None:
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Download approved Piper Telugu voices")
+    parser = argparse.ArgumentParser(
+        description="Download approved Piper voices (Telugu + English)"
+    )
     parser.add_argument("--dest", default="models", help="Destination directory")
     parser.add_argument(
         "--revision",

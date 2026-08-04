@@ -30,3 +30,6 @@ services/piper-tts/models/*.MODEL_CARD
 services/piper-tts/models/voices.manifest.json
 services/piper-tts/models/MODEL_CARD
 
+# Precomputed response audio (generated offline; not committed by default)
+generated/response-audio/
+

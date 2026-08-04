@@ -1,19 +1,41 @@
-import { getCombinedTtsHealth } from '../tts/tts-provider-factory.js';
+import {
+  getCombinedTtsHealth,
+  requiresKokoro,
+  requiresPiper,
+  englishUsesPiper,
+  normalizeVoiceTtsProvider,
+} from '../tts/tts-provider-factory.js';
+import { loadPrecomputedCatalog } from '../tts/precomputed-audio-catalog.js';
 import { globalSpeechMetrics } from './metrics.js';
 
 /**
  * Safe speech dependency readiness (no private URLs or tokens).
+ * Mode-dependent: local-cpu does not require Kokoro.
  */
 export async function getSpeechReadiness(config = {}, { fetchImpl } = {}) {
   const sttMock = (config.voiceSttProvider || 'mock') === 'mock';
-  const ttsMock = (config.voiceTtsProvider || 'mock') === 'mock';
-  const mode = ttsMock ? 'mock' : config.voiceTtsProvider || 'mock';
+  const mode = normalizeVoiceTtsProvider(config.voiceTtsProvider || 'mock');
+  const ttsMock = mode === 'mock';
+  const needKokoro = !ttsMock && requiresKokoro(mode);
+  const needPiper = !ttsMock && requiresPiper(mode);
+  const enPiper = !ttsMock && englishUsesPiper(mode);
 
   const result = {
     mode,
     ready: true,
     voiceConversationEnabled: config.voiceConversationEnabled === true,
     voiceInteractionMode: config.voiceInteractionMode || 'dtmf',
+    requiredServices: {
+      stt: !sttMock,
+      piper: needPiper,
+      kokoro: needKokoro,
+      catalog:
+        mode === 'precomputed-local' &&
+        config.precomputedAudio?.enabled === true,
+    },
+    optionalServices: {
+      kokoro: !needKokoro,
+    },
     services: {
       stt: {
         configured: sttMock ? true : Boolean(config.stt?.streamUrl),
@@ -22,14 +44,30 @@ export async function getSpeechReadiness(config = {}, { fetchImpl } = {}) {
         provider: sttMock ? 'mock' : 'faster-whisper-streaming',
       },
       englishTts: {
-        provider: ttsMock ? 'mock' : 'kokoro',
-        configured: ttsMock ? true : Boolean(config.kokoro?.baseUrl),
+        provider: ttsMock ? 'mock' : enPiper ? 'piper' : 'kokoro',
+        configured: ttsMock
+          ? true
+          : enPiper
+            ? Boolean(config.piper?.baseUrl)
+            : Boolean(config.kokoro?.baseUrl),
         reachable: ttsMock ? true : null,
+        required: !ttsMock,
       },
       teluguTts: {
         provider: ttsMock ? 'mock' : 'piper',
         configured: ttsMock ? true : Boolean(config.piper?.baseUrl),
         reachable: ttsMock ? true : null,
+        required: needPiper,
+      },
+      kokoro: {
+        required: needKokoro,
+        optional: !needKokoro,
+        configured: Boolean(config.kokoro?.baseUrl),
+        reachable: null,
+      },
+      catalog: {
+        enabled: config.precomputedAudio?.enabled === true,
+        ready: null,
       },
     },
     metrics: globalSpeechMetrics.snapshot(),
@@ -53,15 +91,32 @@ export async function getSpeechReadiness(config = {}, { fetchImpl } = {}) {
       combined.providers?.telugu?.configured === true;
     result.services.teluguTts.reachable =
       combined.providers?.telugu?.reachable === true;
+    if (combined.optionalKokoro) {
+      result.services.kokoro.reachable = combined.optionalKokoro.reachable;
+    } else if (needKokoro) {
+      result.services.kokoro.reachable = result.services.englishTts.reachable;
+    }
   }
 
-  result.ready =
-    result.services.stt.ready !== false &&
-    result.services.stt.reachable !== false &&
-    (ttsMock ||
-      (result.services.englishTts.reachable !== false &&
-        result.services.teluguTts.reachable !== false));
+  if (mode === 'precomputed-local') {
+    const catalog = loadPrecomputedCatalog(config);
+    result.services.catalog.enabled = catalog.enabled;
+    result.services.catalog.ready = catalog.ready === true;
+  }
 
+  const sttOk =
+    result.services.stt.ready !== false &&
+    result.services.stt.reachable !== false;
+  const piperOk =
+    !needPiper || result.services.teluguTts.reachable !== false;
+  const englishOk =
+    ttsMock || result.services.englishTts.reachable !== false;
+  const kokoroOk = !needKokoro || result.services.kokoro.reachable !== false;
+  const catalogOk =
+    !result.requiredServices.catalog ||
+    result.services.catalog.ready === true;
+
+  result.ready = sttOk && piperOk && englishOk && kokoroOk && catalogOk;
   return result;
 }
 

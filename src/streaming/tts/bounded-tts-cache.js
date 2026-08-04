@@ -25,6 +25,7 @@ export class BoundedTtsCache {
     voice,
     speed,
     text,
+    speakerId = null,
     formatVersion = 'mulaw-8k-v1',
   }) {
     const normalized = String(text || '')
@@ -35,6 +36,7 @@ export class BoundedTtsCache {
       provider,
       language,
       voice,
+      speakerId == null ? '' : String(speakerId),
       String(Number(speed).toFixed(3)),
       formatVersion,
       normalized,

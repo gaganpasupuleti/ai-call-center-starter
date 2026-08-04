@@ -2,8 +2,18 @@ import { MockSpeechToText } from './mock-stt.js';
 import { MockConversationAgent } from './mock-agent.js';
 import { MockTextToSpeech } from './mock-tts.js';
 import { AdmissionsResponseEngine } from '../response/response-engine.js';
-import { createTextToSpeechProvider } from '../tts/tts-provider-factory.js';
+import {
+  createTextToSpeechProvider,
+  englishUsesPiper,
+} from '../tts/tts-provider-factory.js';
 import { KOKORO_DEFAULT_VOICE } from '../tts/kokoro-voices.js';
+import {
+  PIPER_DEFAULT_ENGLISH_VOICE,
+  PIPER_DEFAULT_ENGLISH_SPEAKER_ID,
+  PIPER_DEFAULT_VOICE,
+  isEnglishPiperVoice,
+  isTeluguPiperVoice,
+} from '../tts/piper-voices.js';
 import { TtsProviderError } from '../tts/errors.js';
 
 /**
@@ -39,6 +49,7 @@ export class VoicePipeline {
       (ttsConfig
         ? createTextToSpeechProvider(ttsConfig)
         : new MockTextToSpeech());
+    this.ttsConfig = ttsConfig;
     this.defaultVoice = defaultVoice;
     this.providerName =
       agent instanceof MockConversationAgent
@@ -64,10 +75,32 @@ export class VoicePipeline {
     }
     const reply = await this.agent.respond({ text: normalized.text, session });
     const language = reply.language || normalized.language || 'en';
-    const voice =
+    const mode =
+      session?.metadata?.voiceTtsProvider ||
+      this.ttsConfig?.voiceTtsProvider ||
+      process.env.VOICE_TTS_PROVIDER ||
+      'mock';
+    const usePiperEn = englishUsesPiper(mode);
+    let voice =
       session?.metadata?.ttsVoice ||
       this.defaultVoice ||
-      (language === 'en' ? KOKORO_DEFAULT_VOICE : undefined);
+      null;
+    let speakerId = session?.metadata?.ttsSpeakerId;
+    if (!voice) {
+      if (language === 'te') {
+        voice = PIPER_DEFAULT_VOICE;
+      } else if (usePiperEn) {
+        voice = PIPER_DEFAULT_ENGLISH_VOICE;
+        speakerId =
+          speakerId ?? PIPER_DEFAULT_ENGLISH_SPEAKER_ID;
+      } else {
+        voice = KOKORO_DEFAULT_VOICE;
+      }
+    } else if (language === 'en' && isEnglishPiperVoice(voice)) {
+      speakerId = speakerId ?? PIPER_DEFAULT_ENGLISH_SPEAKER_ID;
+    } else if (language === 'te' && !isTeluguPiperVoice(voice)) {
+      voice = PIPER_DEFAULT_VOICE;
+    }
 
     let speech = null;
     let ttsError = null;
@@ -76,10 +109,12 @@ export class VoicePipeline {
         text: reply.replyText,
         language,
         voice,
+        speakerId,
         metadata: {
           streamSid: session?.streamSid || null,
           callSid: session?.callSid || null,
           sessionClosed: session?.state === 'closed',
+          templateId: reply.intent || reply.templateId || null,
         },
       });
     } catch (err) {

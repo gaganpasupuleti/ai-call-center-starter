@@ -452,7 +452,7 @@ test('OUTBOUND inherit + Telugu/English routing; msedge rejected; mock works', a
   assert.throws(() => normalizeVoiceTtsProvider('msedge'), /no longer supported/);
   assert.throws(() => resolveOutboundTtsProvider('edge', 'mock'), /no longer supported/);
   assert.equal(resolveOutboundTtsProvider('inherit', 'mock'), 'mock');
-  assert.equal(resolveOutboundTtsProvider('inherit', 'local'), 'local');
+  assert.equal(resolveOutboundTtsProvider('inherit', 'local'), 'local-quality');
 
   const pkg = JSON.parse(readFileSync(new URL('../package.json', import.meta.url)));
   assert.equal(pkg.dependencies['msedge-tts'], undefined);

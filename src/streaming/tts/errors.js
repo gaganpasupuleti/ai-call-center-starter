@@ -25,6 +25,7 @@ export const TTS_ERROR_CODES = Object.freeze({
   PIPER_EMPTY_RESPONSE: 'piper_empty_response',
   PIPER_RESPONSE_TOO_LARGE: 'piper_response_too_large',
   PIPER_VOICE_NOT_ALLOWED: 'piper_voice_not_allowed',
+  PIPER_SPEAKER_NOT_ALLOWED: 'piper_speaker_not_allowed',
   PIPER_MODEL_UNAVAILABLE: 'piper_model_unavailable',
   PIPER_CONVERSION_FAILED: 'piper_conversion_failed',
   PIPER_CONVERSION_TIMEOUT: 'piper_conversion_timeout',

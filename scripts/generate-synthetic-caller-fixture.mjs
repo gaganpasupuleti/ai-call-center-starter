@@ -2,16 +2,14 @@
 /**
  * Generate temporary synthetic caller μ-law fixtures.
  *
- * English → Kokoro (private)
- * Telugu → Piper (private)
+ * Default (Phase 4E.3):
+ *   English → Piper English
+ *   Telugu  → Piper Telugu
  *
- * Prefer running inside Railway private network (ssh / one-off job).
- * Do not commit generated audio. Deletes temp WAV by default.
+ * Optional quality path:
+ *   --fixture-provider kokoro  (English only; offline / not for live gate A)
  *
- * Usage:
- *   node scripts/generate-synthetic-caller-fixture.mjs --language en --text "..." --out /tmp/caller.ulaw
- *   node scripts/generate-synthetic-caller-fixture.mjs --language te --text "..." --out /tmp/caller.ulaw
- *   node scripts/generate-synthetic-caller-fixture.mjs --input-wav ./consented.wav --out /tmp/caller.ulaw
+ * Do not commit generated audio.
  */
 import { mkdtempSync, writeFileSync, unlinkSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -19,7 +17,11 @@ import path from 'node:path';
 import { KokoroTextToSpeech } from '../src/streaming/tts/kokoro-client.js';
 import { PiperTextToSpeech } from '../src/streaming/tts/piper-client.js';
 import { KOKORO_DEFAULT_VOICE } from '../src/streaming/tts/kokoro-voices.js';
-import { PIPER_DEFAULT_VOICE } from '../src/streaming/tts/piper-voices.js';
+import {
+  PIPER_DEFAULT_VOICE,
+  PIPER_DEFAULT_ENGLISH_VOICE,
+  PIPER_DEFAULT_ENGLISH_SPEAKER_ID,
+} from '../src/streaming/tts/piper-voices.js';
 import { wavFileToMulaw8k, isValidMulaw8k } from './lib/wav-mulaw.mjs';
 
 function parseArgs(argv) {
@@ -30,6 +32,8 @@ function parseArgs(argv) {
     out: null,
     keepWav: false,
     voice: null,
+    speakerId: null,
+    fixtureProvider: 'piper',
   };
   for (let i = 0; i < argv.length; i += 1) {
     const a = argv[i];
@@ -38,15 +42,17 @@ function parseArgs(argv) {
     else if (a === '--input-wav' && argv[i + 1]) out.inputWav = argv[++i];
     else if (a === '--out' && argv[i + 1]) out.out = argv[++i];
     else if (a === '--voice' && argv[i + 1]) out.voice = argv[++i];
+    else if (a === '--speaker-id' && argv[i + 1]) out.speakerId = Number(argv[++i]);
+    else if (a === '--fixture-provider' && argv[i + 1]) out.fixtureProvider = argv[++i];
     else if (a === '--keep-wav') out.keepWav = true;
   }
   return out;
 }
 
-async function synthesizeEnglish(text, voice) {
+async function synthesizeEnglishKokoro(text, voice) {
   const baseUrl = (process.env.KOKORO_BASE_URL || '').replace(/\/+$/, '');
   if (!baseUrl) {
-    throw new Error('KOKORO_BASE_URL required for English synthetic fixtures');
+    throw new Error('KOKORO_BASE_URL required for --fixture-provider kokoro');
   }
   const selected = voice || process.env.KOKORO_DEFAULT_VOICE || KOKORO_DEFAULT_VOICE;
   const tts = new KokoroTextToSpeech({
@@ -69,30 +75,48 @@ async function synthesizeEnglish(text, voice) {
   };
 }
 
-async function synthesizeTelugu(text, voice) {
+async function synthesizeWithPiper(text, { language, voice, speakerId }) {
   const baseUrl = (process.env.PIPER_BASE_URL || '').replace(/\/+$/, '');
   if (!baseUrl) {
-    throw new Error('PIPER_BASE_URL required for Telugu synthetic fixtures');
+    throw new Error('PIPER_BASE_URL required for Piper fixtures');
   }
   const selected =
-    voice || process.env.PIPER_DEFAULT_VOICE || PIPER_DEFAULT_VOICE;
+    voice ||
+    (language === 'en'
+      ? process.env.PIPER_ENGLISH_VOICE || PIPER_DEFAULT_ENGLISH_VOICE
+      : process.env.PIPER_TELUGU_VOICE ||
+        process.env.PIPER_DEFAULT_VOICE ||
+        PIPER_DEFAULT_VOICE);
+  const sid =
+    language === 'en'
+      ? speakerId ??
+        Number(process.env.PIPER_ENGLISH_SPEAKER_ID ?? PIPER_DEFAULT_ENGLISH_SPEAKER_ID)
+      : undefined;
   const tts = new PiperTextToSpeech({
     baseUrl,
-    defaultVoice: selected,
+    defaultVoice: PIPER_DEFAULT_VOICE,
+    defaultEnglishVoice: PIPER_DEFAULT_ENGLISH_VOICE,
+    defaultEnglishSpeakerId: PIPER_DEFAULT_ENGLISH_SPEAKER_ID,
     cacheEnabled: false,
     retryOnce: true,
     connectTimeoutMs: Number(process.env.TTS_CONNECT_TIMEOUT_MS || 10_000),
     requestTimeoutMs: Number(
       process.env.FIXTURE_TTS_REQUEST_TIMEOUT_MS ||
         process.env.TTS_REQUEST_TIMEOUT_MS ||
-        120_000,
+        30_000,
     ),
   });
-  const result = await tts.synthesize({ text, language: 'te', voice: selected });
+  const result = await tts.synthesize({
+    text,
+    language,
+    voice: selected,
+    speakerId: sid,
+  });
   return {
     mulaw: result.audio,
     provider: result.provider,
     voice: result.voice,
+    speakerId: result.speakerId ?? null,
   };
 }
 
@@ -138,52 +162,52 @@ async function main() {
       throw new Error('--text or --input-wav is required');
     }
 
-    const synth =
-      language === 'te'
-        ? await synthesizeTelugu(args.text, args.voice)
-        : await synthesizeEnglish(args.text, args.voice);
+    let synth;
+    if (language === 'en' && args.fixtureProvider === 'kokoro') {
+      synth = await synthesizeEnglishKokoro(args.text, args.voice);
+    } else {
+      synth = await synthesizeWithPiper(args.text, {
+        language,
+        voice: args.voice,
+        speakerId: args.speakerId,
+      });
+    }
 
     if (!isValidMulaw8k(synth.mulaw)) {
-      throw new Error('Synthesized fixture is not valid μ-law');
+      throw new Error('synthesized μ-law failed validation');
     }
     writeFileSync(args.out, synth.mulaw);
-
     console.log(
       JSON.stringify(
         {
           ok: true,
-          mode: 'synthetic-tts',
+          mode: 'synthetic',
           language,
-          textLength: args.text.length,
-          sourceProvider: synth.provider,
-          sourceVoice: synth.voice,
+          fixtureProvider: args.fixtureProvider,
+          provider: synth.provider,
+          voice: synth.voice,
+          speakerId: synth.speakerId ?? null,
           out: args.out,
           bytes: synth.mulaw.length,
-          durationSeconds: Number((synth.mulaw.length / 8000).toFixed(3)),
-          encoding: 'audio/x-mulaw',
-          sampleRate: 8000,
           telephoneCalls: 0,
         },
         null,
         2,
       ),
     );
+  } catch (err) {
+    console.error(JSON.stringify({ ok: false, error: err.message, telephoneCalls: 0 }));
+    process.exit(1);
   } finally {
-    if (!args.keepWav && existsSync(tempWav)) {
+    if (!args.keepWav) {
       try {
         unlinkSync(tempWav);
         deleted.push(tempWav);
       } catch {
-        // ignore cleanup errors
+        // ignore
       }
-    }
-    if (deleted.length) {
-      console.error(JSON.stringify({ deletedTempFiles: deleted }));
     }
   }
 }
 
-main().catch((err) => {
-  console.error(JSON.stringify({ ok: false, error: err.message }));
-  process.exit(1);
-});
+main();

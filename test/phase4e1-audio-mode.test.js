@@ -65,10 +65,10 @@ test('empty transcript and wrong intent fail scenario assertions', () => {
 });
 
 test('English mock TTS and Telugu Kokoro routing fail real-provider assertions', () => {
-  const enExpected = 'kokoro-local';
+  const enExpected = 'piper-local';
   const teExpected = 'piper-local';
   assert.notEqual('mock', enExpected);
-  assert.notEqual('piper-local', enExpected);
+  assert.notEqual('kokoro-local', enExpected);
   assert.notEqual('kokoro-local', teExpected);
   assert.notEqual('mock', teExpected);
 });

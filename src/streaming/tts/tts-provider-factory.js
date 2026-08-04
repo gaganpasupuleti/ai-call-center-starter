@@ -10,15 +10,35 @@ import { TtsConcurrencyLimiter } from './tts-concurrency.js';
 import { KOKORO_DEFAULT_VOICE, isAllowedKokoroVoice } from './kokoro-voices.js';
 import {
   PIPER_DEFAULT_VOICE,
+  PIPER_DEFAULT_ENGLISH_VOICE,
+  PIPER_DEFAULT_ENGLISH_SPEAKER_ID,
   isAllowedPiperVoice,
+  isEnglishPiperVoice,
+  isTeluguPiperVoice,
 } from './piper-voices.js';
+import {
+  createPrecomputedCatalogProvider,
+  loadPrecomputedCatalog,
+} from './precomputed-audio-catalog.js';
 
-const SUPPORTED_MODES = new Set(['mock', 'local', 'kokoro', 'piper']);
+/**
+ * Supported VOICE_TTS_PROVIDER modes (Phase 4E.3).
+ * `local` remains an alias of `local-quality` for backward compatibility.
+ */
+const SUPPORTED_MODES = new Set([
+  'mock',
+  'local',
+  'local-cpu',
+  'local-quality',
+  'precomputed-local',
+  'kokoro',
+  'piper',
+]);
 
 export class MsEdgeRemovedError extends Error {
   constructor(envName, value) {
     super(
-      `${envName}=${value} is no longer supported. Microsoft Edge online TTS was removed because it contacts Microsoft’s speech service. Use mock, local, kokoro, or piper.`,
+      `${envName}=${value} is no longer supported. Microsoft Edge online TTS was removed because it contacts Microsoft’s speech service. Use mock, local-cpu, local-quality, precomputed-local, kokoro, or piper.`,
     );
     this.name = 'MsEdgeRemovedError';
     this.code = 'tts_msedge_removed';
@@ -34,12 +54,22 @@ export function rejectLegacyMsEdge(value, envName = 'VOICE_TTS_PROVIDER') {
 
 export function normalizeVoiceTtsProvider(value) {
   rejectLegacyMsEdge(value, 'VOICE_TTS_PROVIDER');
-  const mode = String(value ?? 'mock').trim().toLowerCase();
-  if (SUPPORTED_MODES.has(mode)) return mode;
+  let mode = String(value ?? 'mock').trim().toLowerCase();
   if (mode === '' || value == null) return 'mock';
+  if (mode === 'local') mode = 'local-quality';
+  if (
+    mode === 'mock' ||
+    mode === 'local-cpu' ||
+    mode === 'local-quality' ||
+    mode === 'precomputed-local' ||
+    mode === 'kokoro' ||
+    mode === 'piper'
+  ) {
+    return mode;
+  }
   throw new TtsProviderError(
     TTS_ERROR_CODES.NOT_CONFIGURED,
-    `Unknown VOICE_TTS_PROVIDER: ${value}. Use mock, local, kokoro, or piper.`,
+    `Unknown VOICE_TTS_PROVIDER: ${value}. Use mock, local-cpu, local-quality, precomputed-local, kokoro, or piper.`,
     { statusCode: 500 },
   );
 }
@@ -50,11 +80,30 @@ export function resolveOutboundTtsProvider(outboundValue, voiceTtsProvider) {
   if (raw === 'inherit' || raw === '') {
     return normalizeVoiceTtsProvider(voiceTtsProvider || 'mock');
   }
-  if (SUPPORTED_MODES.has(raw)) return raw;
-  throw new TtsProviderError(
-    TTS_ERROR_CODES.NOT_CONFIGURED,
-    `Unknown OUTBOUND_TTS_PROVIDER: ${outboundValue}. Use inherit, mock, local, kokoro, or piper.`,
-    { statusCode: 500 },
+  return normalizeVoiceTtsProvider(raw);
+}
+
+/** Modes where English runtime TTS is Piper (not Kokoro). */
+export function englishUsesPiper(mode) {
+  const m = normalizeVoiceTtsProvider(mode);
+  return m === 'local-cpu' || m === 'precomputed-local' || m === 'piper';
+}
+
+/** Modes that require Kokoro readiness. */
+export function requiresKokoro(mode) {
+  const m = normalizeVoiceTtsProvider(mode);
+  return m === 'local-quality' || m === 'kokoro' || m === 'local';
+}
+
+/** Modes that require Piper readiness. */
+export function requiresPiper(mode) {
+  const m = normalizeVoiceTtsProvider(mode);
+  return (
+    m === 'local-cpu' ||
+    m === 'local-quality' ||
+    m === 'precomputed-local' ||
+    m === 'piper' ||
+    m === 'local'
   );
 }
 
@@ -116,7 +165,7 @@ function buildPiper(config, overrides, shared) {
     overrides.piperLimiter ||
     new TtsConcurrencyLimiter({
       maxConcurrent:
-        piperCfg.maxConcurrentSynthesis ?? ttsCfg.maxConcurrentSynthesis ?? 2,
+        piperCfg.maxConcurrentSynthesis ?? ttsCfg.maxConcurrentSynthesis ?? 1,
       maxPending: ttsCfg.maxPendingRequests,
     });
   return (
@@ -124,6 +173,10 @@ function buildPiper(config, overrides, shared) {
     new PiperTextToSpeech({
       baseUrl: piperCfg.baseUrl,
       defaultVoice: piperCfg.defaultVoice || PIPER_DEFAULT_VOICE,
+      defaultEnglishVoice:
+        piperCfg.englishVoice || PIPER_DEFAULT_ENGLISH_VOICE,
+      defaultEnglishSpeakerId:
+        piperCfg.englishSpeakerId ?? PIPER_DEFAULT_ENGLISH_SPEAKER_ID,
       defaultSpeed: piperCfg.defaultSpeed ?? ttsCfg.defaultSpeed ?? 1.0,
       connectTimeoutMs: piperCfg.connectTimeoutMs ?? ttsCfg.connectTimeoutMs,
       requestTimeoutMs: piperCfg.requestTimeoutMs ?? ttsCfg.requestTimeoutMs,
@@ -149,12 +202,6 @@ function buildPiper(config, overrides, shared) {
 
 /**
  * Single factory for conversational and outbound TTS.
- *
- * Modes:
- * - mock: all languages use mock TTS
- * - local: English → Kokoro, Telugu → Piper
- * - kokoro: English-only Kokoro
- * - piper: Telugu-only Piper
  */
 export function createTextToSpeechProvider(config = {}, overrides = {}) {
   const mode = normalizeVoiceTtsProvider(
@@ -162,6 +209,8 @@ export function createTextToSpeechProvider(config = {}, overrides = {}) {
   );
   const ttsCfg = config.tts || {};
   const shared = buildSharedResources(ttsCfg, overrides);
+  const piper = () => buildPiper(config, overrides, shared);
+  const kokoro = () => buildKokoro(config, overrides, shared);
 
   if (mode === 'mock') {
     const mock = overrides.mock || new MockTextToSpeech();
@@ -174,7 +223,7 @@ export function createTextToSpeechProvider(config = {}, overrides = {}) {
   }
 
   if (mode === 'kokoro') {
-    const english = buildKokoro(config, overrides, shared);
+    const english = kokoro();
     if (overrides.router === false) return english;
     return new LanguageTtsRouter({
       englishProvider: english,
@@ -184,21 +233,50 @@ export function createTextToSpeechProvider(config = {}, overrides = {}) {
   }
 
   if (mode === 'piper') {
-    const telugu = buildPiper(config, overrides, shared);
-    if (overrides.router === false) return telugu;
+    const only = piper();
+    if (overrides.router === false) return only;
     return new LanguageTtsRouter({
-      englishProvider: overrides.englishProvider || null,
-      teluguProvider: telugu,
+      englishProvider: only,
+      teluguProvider: only,
       defaultLanguage: ttsCfg.defaultLanguage || 'te',
     });
   }
 
-  // local
-  const english = buildKokoro(config, overrides, shared);
-  const telugu = buildPiper(config, overrides, shared);
-  if (overrides.router === false) {
-    return english;
+  if (mode === 'local-cpu') {
+    const both = piper();
+    if (overrides.router === false) return both;
+    return new LanguageTtsRouter({
+      englishProvider: both,
+      teluguProvider: both,
+      defaultLanguage: ttsCfg.defaultLanguage || 'en',
+    });
   }
+
+  if (mode === 'precomputed-local') {
+    const both = piper();
+    const catalog = overrides.precomputedCatalog || loadPrecomputedCatalog(config);
+    const english = createPrecomputedCatalogProvider({
+      catalog,
+      fallback: both,
+      language: 'en',
+    });
+    const telugu = createPrecomputedCatalogProvider({
+      catalog,
+      fallback: both,
+      language: 'te',
+    });
+    if (overrides.router === false) return english;
+    return new LanguageTtsRouter({
+      englishProvider: english,
+      teluguProvider: telugu,
+      defaultLanguage: ttsCfg.defaultLanguage || 'en',
+    });
+  }
+
+  // local-quality (and legacy `local`)
+  const english = kokoro();
+  const telugu = piper();
+  if (overrides.router === false) return english;
   return new LanguageTtsRouter({
     englishProvider: english,
     teluguProvider: telugu,
@@ -220,8 +298,10 @@ export async function synthesizeOutboundAudio(text, options = {}, config = {}) {
   );
 
   const voiceMetaLanguage = options.voiceLanguage
-    || (isAllowedPiperVoice(options.voice) ? 'te' : null)
-    || (isAllowedKokoroVoice(options.voice) ? 'en' : null)
+    || (isTeluguPiperVoice(options.voice) ? 'te' : null)
+    || (isEnglishPiperVoice(options.voice) || isAllowedKokoroVoice(options.voice)
+      ? 'en'
+      : null)
     || (String(options.voice || '').startsWith('te') ? 'te' : null);
 
   const language = resolveSpeechLanguage({
@@ -235,14 +315,7 @@ export async function synthesizeOutboundAudio(text, options = {}, config = {}) {
   if (outboundMode === 'kokoro' && language === 'te') {
     throw new TtsProviderError(
       TTS_ERROR_CODES.LANGUAGE_NOT_CONFIGURED,
-      'Telugu TTS requires VOICE_TTS_PROVIDER=local or piper',
-      { statusCode: 501 },
-    );
-  }
-  if (outboundMode === 'piper' && language === 'en') {
-    throw new TtsProviderError(
-      TTS_ERROR_CODES.LANGUAGE_NOT_CONFIGURED,
-      'English TTS requires VOICE_TTS_PROVIDER=local or kokoro',
+      'Telugu TTS requires VOICE_TTS_PROVIDER=local-cpu, local-quality, or piper',
       { statusCode: 501 },
     );
   }
@@ -262,12 +335,23 @@ export async function synthesizeOutboundAudio(text, options = {}, config = {}) {
   );
 
   let voice = options.voice;
+  let speakerId = options.speakerId;
   if (language === 'en') {
-    voice = isAllowedKokoroVoice(voice)
-      ? voice
-      : config.kokoro?.defaultVoice || KOKORO_DEFAULT_VOICE;
+    if (englishUsesPiper(outboundMode)) {
+      voice = isEnglishPiperVoice(voice)
+        ? voice
+        : config.piper?.englishVoice || PIPER_DEFAULT_ENGLISH_VOICE;
+      speakerId =
+        speakerId ??
+        config.piper?.englishSpeakerId ??
+        PIPER_DEFAULT_ENGLISH_SPEAKER_ID;
+    } else {
+      voice = isAllowedKokoroVoice(voice)
+        ? voice
+        : config.kokoro?.defaultVoice || KOKORO_DEFAULT_VOICE;
+    }
   } else if (language === 'te') {
-    voice = isAllowedPiperVoice(voice)
+    voice = isTeluguPiperVoice(voice) || isAllowedPiperVoice(voice)
       ? voice
       : config.piper?.defaultVoice || PIPER_DEFAULT_VOICE;
   }
@@ -276,6 +360,7 @@ export async function synthesizeOutboundAudio(text, options = {}, config = {}) {
     text,
     language,
     voice,
+    speakerId,
     speed: options.speed,
   });
 
@@ -289,6 +374,7 @@ export async function synthesizeOutboundAudio(text, options = {}, config = {}) {
     energyRatio: 1,
     provider: speech.provider,
     voice: speech.voice,
+    speakerId: speech.speakerId ?? null,
     requestedVoice: speech.voice,
     locale: speech.language === 'te' ? 'te-IN' : 'en-IN',
     scriptMismatch: false,
@@ -315,7 +401,7 @@ export function textHasTeluguScript(text) {
 }
 
 export function teluguVoiceNeedsTeluguScript(voice, text) {
-  if (isAllowedPiperVoice(voice) || String(voice || '').toLowerCase().startsWith('te')) {
+  if (isTeluguPiperVoice(voice) || String(voice || '').toLowerCase().startsWith('te')) {
     return !textHasTeluguScript(text);
   }
   return false;
@@ -351,21 +437,34 @@ export function getTtsHealth({
  */
 export async function getCombinedTtsHealth(config = {}) {
   const mode = normalizeVoiceTtsProvider(config.voiceTtsProvider || 'mock');
+  const enProvider = englishUsesPiper(mode)
+    ? 'piper'
+    : mode === 'mock'
+      ? 'mock'
+      : 'kokoro';
   const result = {
     mode,
     providers: {
       english: {
-        provider: mode === 'mock' ? 'mock' : 'kokoro',
+        provider: enProvider,
         configured: false,
         reachable: null,
-        voice: config.kokoro?.defaultVoice || KOKORO_DEFAULT_VOICE,
+        voice: englishUsesPiper(mode)
+          ? config.piper?.englishVoice || PIPER_DEFAULT_ENGLISH_VOICE
+          : config.kokoro?.defaultVoice || KOKORO_DEFAULT_VOICE,
+        speakerId: englishUsesPiper(mode)
+          ? config.piper?.englishSpeakerId ?? PIPER_DEFAULT_ENGLISH_SPEAKER_ID
+          : null,
+        required: mode !== 'mock' && (requiresKokoro(mode) || englishUsesPiper(mode)),
       },
       telugu: {
         provider: mode === 'mock' ? 'mock' : 'piper',
         configured: false,
         reachable: null,
         voice: config.piper?.defaultVoice || PIPER_DEFAULT_VOICE,
+        required: mode !== 'mock' && requiresPiper(mode),
       },
+      kokoroOptional: !requiresKokoro(mode),
     },
   };
 
@@ -377,8 +476,8 @@ export async function getCombinedTtsHealth(config = {}) {
     return result;
   }
 
-  const shouldProbeKokoro = mode === 'local' || mode === 'kokoro';
-  const shouldProbePiper = mode === 'local' || mode === 'piper';
+  const shouldProbeKokoro = requiresKokoro(mode);
+  const shouldProbePiper = requiresPiper(mode) || englishUsesPiper(mode);
 
   if (shouldProbeKokoro) {
     result.providers.english.configured = Boolean(config.kokoro?.baseUrl);
@@ -391,10 +490,14 @@ export async function getCombinedTtsHealth(config = {}) {
       });
       const health = await client.getHealth();
       result.providers.english.reachable = health.reachable === true;
-      result.providers.english.voice = health.defaultVoice || result.providers.english.voice;
+      result.providers.english.voice =
+        health.defaultVoice || result.providers.english.voice;
     } else {
       result.providers.english.reachable = false;
     }
+  } else if (englishUsesPiper(mode)) {
+    // English health comes from Piper probe below
+    result.providers.english.configured = Boolean(config.piper?.baseUrl);
   } else {
     result.providers.english.provider = 'unavailable';
     result.providers.english.configured = false;
@@ -402,11 +505,17 @@ export async function getCombinedTtsHealth(config = {}) {
   }
 
   if (shouldProbePiper) {
-    result.providers.telugu.configured = Boolean(config.piper?.baseUrl);
-    if (result.providers.telugu.configured) {
+    const piperConfigured = Boolean(config.piper?.baseUrl);
+    result.providers.telugu.configured = piperConfigured;
+    if (englishUsesPiper(mode)) {
+      result.providers.english.configured = piperConfigured;
+    }
+    if (piperConfigured) {
       const client = new PiperTextToSpeech({
         baseUrl: config.piper.baseUrl,
         defaultVoice: config.piper.defaultVoice,
+        defaultEnglishVoice: config.piper.englishVoice,
+        defaultEnglishSpeakerId: config.piper.englishSpeakerId,
         connectTimeoutMs: Math.min(
           3000,
           config.piper?.connectTimeoutMs || config.tts?.connectTimeoutMs || 3000,
@@ -414,15 +523,37 @@ export async function getCombinedTtsHealth(config = {}) {
         cacheEnabled: false,
       });
       const health = await client.getHealth();
-      result.providers.telugu.reachable = health.reachable === true;
-      result.providers.telugu.voice = health.defaultVoice || result.providers.telugu.voice;
+      const reachable = health.reachable === true;
+      result.providers.telugu.reachable = reachable;
+      if (englishUsesPiper(mode)) {
+        result.providers.english.reachable = reachable;
+      }
     } else {
       result.providers.telugu.reachable = false;
+      if (englishUsesPiper(mode)) {
+        result.providers.english.reachable = false;
+      }
     }
   } else {
     result.providers.telugu.provider = 'unavailable';
     result.providers.telugu.configured = false;
     result.providers.telugu.reachable = false;
+  }
+
+  // Optional Kokoro probe for informational status when not required
+  if (!shouldProbeKokoro && config.kokoro?.baseUrl) {
+    result.optionalKokoro = { configured: true, reachable: null };
+    try {
+      const client = new KokoroTextToSpeech({
+        baseUrl: config.kokoro.baseUrl,
+        connectTimeoutMs: 2000,
+        cacheEnabled: false,
+      });
+      const health = await client.getHealth();
+      result.optionalKokoro.reachable = health.reachable === true;
+    } catch {
+      result.optionalKokoro.reachable = false;
+    }
   }
 
   return result;

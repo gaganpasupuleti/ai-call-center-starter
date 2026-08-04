@@ -65,15 +65,24 @@ function normalizeVoiceTtsProvider(value) {
   const mode = String(value ?? 'mock').trim().toLowerCase();
   if (mode === 'msedge' || mode === 'edge') {
     throw new Error(
-      `VOICE_TTS_PROVIDER="${value}" is no longer supported. Microsoft Edge online TTS was removed. Use mock, local, kokoro, or piper.`,
+      `VOICE_TTS_PROVIDER="${value}" is no longer supported. Microsoft Edge online TTS was removed. Use mock, local-cpu, local-quality, precomputed-local, kokoro, or piper.`,
     );
   }
-  if (mode === 'mock' || mode === 'local' || mode === 'kokoro' || mode === 'piper') {
+  // Legacy alias: local → local-quality (Kokoro EN + Piper TE)
+  if (mode === 'local') return 'local-quality';
+  if (
+    mode === 'mock' ||
+    mode === 'local-cpu' ||
+    mode === 'local-quality' ||
+    mode === 'precomputed-local' ||
+    mode === 'kokoro' ||
+    mode === 'piper'
+  ) {
     return mode;
   }
   if (mode === '' || value == null) return 'mock';
   throw new Error(
-    `Invalid VOICE_TTS_PROVIDER "${value}". Use mock, local, kokoro, or piper.`,
+    `Invalid VOICE_TTS_PROVIDER "${value}". Use mock, local-cpu, local-quality, precomputed-local, kokoro, or piper.`,
   );
 }
 
@@ -81,20 +90,23 @@ function normalizeOutboundTtsProvider(value) {
   const mode = String(value ?? 'inherit').trim().toLowerCase();
   if (mode === 'msedge' || mode === 'edge') {
     throw new Error(
-      `OUTBOUND_TTS_PROVIDER="${value}" is no longer supported. Microsoft Edge online TTS was removed. Use inherit, mock, local, kokoro, or piper.`,
+      `OUTBOUND_TTS_PROVIDER="${value}" is no longer supported. Microsoft Edge online TTS was removed. Use inherit, mock, local-cpu, local-quality, precomputed-local, kokoro, or piper.`,
     );
   }
+  if (mode === 'inherit') return mode;
+  if (mode === 'local') return 'local-quality';
   if (
-    mode === 'inherit' ||
     mode === 'mock' ||
-    mode === 'local' ||
+    mode === 'local-cpu' ||
+    mode === 'local-quality' ||
+    mode === 'precomputed-local' ||
     mode === 'kokoro' ||
     mode === 'piper'
   ) {
     return mode;
   }
   throw new Error(
-    `Invalid OUTBOUND_TTS_PROVIDER "${value}". Use inherit, mock, local, kokoro, or piper.`,
+    `Invalid OUTBOUND_TTS_PROVIDER "${value}". Use inherit, mock, local-cpu, local-quality, precomputed-local, kokoro, or piper.`,
   );
 }
 
@@ -306,10 +318,23 @@ export function getConfig(overrides = {}) {
         overrides.piper?.defaultVoice ??
         process.env.PIPER_DEFAULT_VOICE ??
         'te_IN-padmavathi-medium',
+      englishVoice:
+        overrides.piper?.englishVoice ??
+        process.env.PIPER_ENGLISH_VOICE ??
+        'en_US-libritts_r-medium',
+      englishSpeakerId: Number(
+        overrides.piper?.englishSpeakerId ??
+          process.env.PIPER_ENGLISH_SPEAKER_ID ??
+          0,
+      ),
+      teluguVoice:
+        overrides.piper?.teluguVoice ??
+        process.env.PIPER_TELUGU_VOICE ??
+        'te_IN-padmavathi-medium',
       allowedVoices: String(
         overrides.piper?.allowedVoices ??
           process.env.PIPER_ALLOWED_VOICES ??
-          'te_IN-padmavathi-medium,te_IN-venkatesh-medium',
+          'te_IN-padmavathi-medium,te_IN-venkatesh-medium,en_US-libritts_r-medium',
       ),
       defaultSpeed: Number(
         overrides.piper?.defaultSpeed ??
@@ -324,7 +349,7 @@ export function getConfig(overrides = {}) {
       requestTimeoutMs: Number(
         overrides.piper?.requestTimeoutMs ??
           process.env.PIPER_REQUEST_TIMEOUT_MS ??
-          20000,
+          10000,
       ),
       maxWavBytes: Number(
         overrides.piper?.maxWavBytes ??
@@ -339,8 +364,22 @@ export function getConfig(overrides = {}) {
       maxConcurrentSynthesis: Number(
         overrides.piper?.maxConcurrentSynthesis ??
           process.env.PIPER_MAX_CONCURRENT_SYNTHESIS ??
-          2,
+          1,
       ),
+    },
+    precomputedAudio: {
+      enabled:
+        overrides.precomputedAudio?.enabled ??
+        String(process.env.PRECOMPUTED_AUDIO_ENABLED || 'false').toLowerCase() ===
+          'true',
+      dir:
+        overrides.precomputedAudio?.dir ??
+        process.env.PRECOMPUTED_AUDIO_DIR ??
+        '/response-audio',
+      manifestPath:
+        overrides.precomputedAudio?.manifestPath ??
+        process.env.PRECOMPUTED_AUDIO_MANIFEST ??
+        null,
     },
     tts: {
       connectTimeoutMs: Number(

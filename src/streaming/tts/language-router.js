@@ -1,11 +1,15 @@
 import { TextToSpeechProvider } from '../ai/interfaces.js';
 import { TtsProviderError, TTS_ERROR_CODES } from './errors.js';
 import { isAllowedKokoroVoice } from './kokoro-voices.js';
-import { isAllowedPiperVoice } from './piper-voices.js';
+import {
+  isAllowedPiperVoice,
+  isEnglishPiperVoice,
+  isTeluguPiperVoice,
+} from './piper-voices.js';
 
 /**
  * Language-aware TTS router.
- * English → Kokoro (or mock). Telugu → Piper (or mock).
+ * Mode-specific providers are injected by the factory.
  */
 export class LanguageTtsRouter extends TextToSpeechProvider {
   constructor({
@@ -37,14 +41,14 @@ export class LanguageTtsRouter extends TextToSpeechProvider {
 
     const voice = input.voice ? String(input.voice).trim() : '';
     if (voice) {
-      if (language === 'te' && isAllowedKokoroVoice(voice)) {
+      if (language === 'te' && (isAllowedKokoroVoice(voice) || isEnglishPiperVoice(voice))) {
         throw new TtsProviderError(
           TTS_ERROR_CODES.LANGUAGE_VOICE_MISMATCH,
           'English voice cannot be used with Telugu text',
           { statusCode: 400 },
         );
       }
-      if (language === 'en' && isAllowedPiperVoice(voice)) {
+      if (language === 'en' && isTeluguPiperVoice(voice)) {
         throw new TtsProviderError(
           TTS_ERROR_CODES.LANGUAGE_VOICE_MISMATCH,
           'Telugu voice cannot be used with English text',

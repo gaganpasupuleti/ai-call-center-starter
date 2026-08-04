@@ -13,8 +13,9 @@ import { ConversationTimers, clearConversationTimers } from './timers.js';
 import { listenPrompt } from './prompts.js';
 import { globalSpeechMetrics } from './metrics.js';
 import { ResponseActionExecutor } from '../actions/response-action-executor.js';
-import { PIPER_DEFAULT_VOICE } from '../tts/piper-voices.js';
+import { PIPER_DEFAULT_VOICE, PIPER_DEFAULT_ENGLISH_VOICE, PIPER_DEFAULT_ENGLISH_SPEAKER_ID } from '../tts/piper-voices.js';
 import { KOKORO_DEFAULT_VOICE } from '../tts/kokoro-voices.js';
+import { englishUsesPiper } from '../tts/tts-provider-factory.js';
 
 /**
  * Orchestrates greeting → listen → turn → speak → listen for voice modes.
@@ -398,14 +399,26 @@ export class VoiceConversationController {
       event: 'system_prompt',
     });
     try {
+      const mode = this.appConfig?.voiceTtsProvider || 'mock';
+      const usePiperEn = englishUsesPiper(mode);
       const voice =
         language === 'te'
-          ? this.appConfig.piper?.defaultVoice || PIPER_DEFAULT_VOICE
-          : this.appConfig.kokoro?.defaultVoice || KOKORO_DEFAULT_VOICE;
+          ? this.appConfig.piper?.teluguVoice ||
+            this.appConfig.piper?.defaultVoice ||
+            PIPER_DEFAULT_VOICE
+          : usePiperEn
+            ? this.appConfig.piper?.englishVoice || PIPER_DEFAULT_ENGLISH_VOICE
+            : this.appConfig.kokoro?.defaultVoice || KOKORO_DEFAULT_VOICE;
+      const speakerId =
+        language === 'en' && usePiperEn
+          ? this.appConfig.piper?.englishSpeakerId ??
+            PIPER_DEFAULT_ENGLISH_SPEAKER_ID
+          : undefined;
       const speech = await this.pipeline.tts.synthesize({
         text,
         language: language === 'te' ? 'te' : 'en',
         voice,
+        speakerId,
         metadata: {
           streamSid: session.streamSid,
           sessionClosed: session.state === 'closed',

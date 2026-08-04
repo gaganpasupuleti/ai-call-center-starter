@@ -39,4 +39,19 @@ Inspected revision channel: `main` (MODEL_CARD files fetched 2026-08-03)
 A full `models/voices.manifest.json` is produced by `scripts/download_voices.py` (gitignored). Do not infer a voice licence only from
 the overall Hugging Face repository label; use the per-voice MODEL_CARD.
 
+### en_US-libritts_r-medium (Phase 4E.3 CPU-safe English)
+
+- Path: `en/en_US/libritts_r/medium/`
+- Language: en_US
+- Quality: medium
+- Sample rate (model card): 22,050 Hz
+- Speakers: 904 (multi-speaker)
+- Dataset: http://www.openslr.org/141/ (LibriTTS-R)
+- Dataset licence stated on MODEL_CARD: **CC BY 4.0**
+- Source revision (pinned): `9f967d15e9ccdf43078586d1476ee70f314401bd`
+- MODEL_CARD SHA-256: `0ccde6927e5bb4d743f4ea39618a9387ba18cca3351220a8a9cfdbc68b30fcb9`
+- ONNX SHA-256: `10bb85e071d616fcf4071f369f1799d0491492ab3c5d552ec19fb548fac13195`
+- Config SHA-256: `b471dc60d2d8335e819c393d196d6fbf792817f40051257b269878505bc9afb3`
+- Attribution: Fine-tuned from English lessac medium on train-clean-360 (per MODEL_CARD)
+
 Copies of the inspected MODEL_CARD text are kept under `notices/` for attribution.

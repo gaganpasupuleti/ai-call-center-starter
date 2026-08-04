@@ -6,22 +6,34 @@ import { TtsConcurrencyLimiter } from './tts-concurrency.js';
 import { TtsProviderError, TTS_ERROR_CODES } from './errors.js';
 import {
   PIPER_DEFAULT_VOICE,
+  PIPER_DEFAULT_ENGLISH_VOICE,
+  PIPER_DEFAULT_ENGLISH_SPEAKER_ID,
   validatePiperVoice,
+  validatePiperSpeakerId,
   speedToLengthScale,
+  isEnglishPiperVoice,
+  isTeluguPiperVoice,
+  defaultPiperVoiceForLanguage,
 } from './piper-voices.js';
 import { isAllowedKokoroVoice } from './kokoro-voices.js';
 
 /**
- * Self-hosted Piper HTTP Telugu TTS → μ-law 8 kHz for SmartPing.
+ * Self-hosted Piper HTTP TTS → μ-law 8 kHz for SmartPing.
+ * English (multi-speaker) and Telugu (single-speaker) voices.
  */
 export class PiperTextToSpeech extends TextToSpeechProvider {
   constructor(options = {}) {
     super();
     this.baseUrl = String(options.baseUrl || '').replace(/\/+$/, '');
     this.defaultVoice = options.defaultVoice || PIPER_DEFAULT_VOICE;
+    this.defaultEnglishVoice =
+      options.defaultEnglishVoice || PIPER_DEFAULT_ENGLISH_VOICE;
+    this.defaultEnglishSpeakerId = Number(
+      options.defaultEnglishSpeakerId ?? PIPER_DEFAULT_ENGLISH_SPEAKER_ID,
+    );
     this.defaultSpeed = clampSpeed(options.defaultSpeed ?? 1.0, options);
     this.connectTimeoutMs = Number(options.connectTimeoutMs || 5000);
-    this.requestTimeoutMs = Number(options.requestTimeoutMs || 20000);
+    this.requestTimeoutMs = Number(options.requestTimeoutMs || 10000);
     this.maxTextChars = Number(options.maxTextChars || 600);
     this.maxWavBytes = Number(options.maxWavBytes || 8_388_608);
     this.maxMulawBytes = Number(options.maxMulawBytes || 160_000);
@@ -52,18 +64,12 @@ export class PiperTextToSpeech extends TextToSpeechProvider {
     text,
     language = 'te',
     voice,
+    speakerId,
     speed,
     metadata = {},
   } = {}) {
     const started = Date.now();
-    const lang = String(language || 'te').toLowerCase();
-    if (lang !== 'te') {
-      throw new TtsProviderError(
-        TTS_ERROR_CODES.LANGUAGE_NOT_CONFIGURED,
-        'Piper is Telugu-only in Phase 4D',
-        { statusCode: 400 },
-      );
-    }
+    const lang = String(language || 'te').toLowerCase() === 'en' ? 'en' : 'te';
     if (!this.baseUrl) {
       throw new TtsProviderError(
         TTS_ERROR_CODES.PIPER_NOT_CONFIGURED,
@@ -91,18 +97,45 @@ export class PiperTextToSpeech extends TextToSpeechProvider {
     if (voice && isAllowedKokoroVoice(voice)) {
       throw new TtsProviderError(
         TTS_ERROR_CODES.LANGUAGE_VOICE_MISMATCH,
-        'English Kokoro voice cannot be used for Telugu synthesis',
+        'Kokoro voice cannot be used with Piper synthesis',
         { statusCode: 400 },
       );
     }
 
-    const selectedVoice = validatePiperVoice(voice || this.defaultVoice);
+    const fallbackVoice =
+      lang === 'en' ? this.defaultEnglishVoice : this.defaultVoice;
+    const selectedVoice = validatePiperVoice(voice || fallbackVoice, {
+      language: lang,
+    });
+    if (lang === 'en' && isTeluguPiperVoice(selectedVoice)) {
+      throw new TtsProviderError(
+        TTS_ERROR_CODES.LANGUAGE_VOICE_MISMATCH,
+        'Telugu Piper voice cannot be used with English text',
+        { statusCode: 400 },
+      );
+    }
+    if (lang === 'te' && isEnglishPiperVoice(selectedVoice)) {
+      throw new TtsProviderError(
+        TTS_ERROR_CODES.LANGUAGE_VOICE_MISMATCH,
+        'English Piper voice cannot be used with Telugu text',
+        { statusCode: 400 },
+      );
+    }
+
+    const selectedSpeakerId = validatePiperSpeakerId(
+      selectedVoice,
+      speakerId ??
+        (isEnglishPiperVoice(selectedVoice)
+          ? this.defaultEnglishSpeakerId
+          : null),
+    );
     const selectedSpeed = clampSpeed(speed ?? this.defaultSpeed, this);
     const lengthScale = speedToLengthScale(selectedSpeed, this);
     const cacheKey = BoundedTtsCache.buildKey({
       provider: 'piper-local',
-      language: 'te',
+      language: lang,
       voice: selectedVoice,
+      speakerId: selectedSpeakerId,
       speed: selectedSpeed,
       text: trimmed,
     });
@@ -118,7 +151,8 @@ export class PiperTextToSpeech extends TextToSpeechProvider {
         },
         provider: 'piper-local',
         voice: selectedVoice,
-        language: 'te',
+        speakerId: selectedSpeakerId,
+        language: lang,
         durationSeconds: Number((cached.length / AUDIO.sampleRate).toFixed(3)),
         synthesisDurationMs: Date.now() - started,
         cached: true,
@@ -136,10 +170,20 @@ export class PiperTextToSpeech extends TextToSpeechProvider {
 
       let wav;
       try {
-        wav = await this.#fetchWav(trimmed, selectedVoice, lengthScale);
+        wav = await this.#fetchWav(
+          trimmed,
+          selectedVoice,
+          lengthScale,
+          selectedSpeakerId,
+        );
       } catch (err) {
         if (this._retryOnce && isRetryable(err)) {
-          wav = await this.#fetchWav(trimmed, selectedVoice, lengthScale);
+          wav = await this.#fetchWav(
+            trimmed,
+            selectedVoice,
+            lengthScale,
+            selectedSpeakerId,
+          );
         } else {
           throw err;
         }
@@ -157,7 +201,8 @@ export class PiperTextToSpeech extends TextToSpeechProvider {
         format: converted.format,
         provider: 'piper-local',
         voice: selectedVoice,
-        language: 'te',
+        speakerId: selectedSpeakerId,
+        language: lang,
         durationSeconds: converted.durationSeconds,
         synthesisDurationMs: Date.now() - started,
         cached: false,
@@ -185,7 +230,8 @@ export class PiperTextToSpeech extends TextToSpeechProvider {
       configured: Boolean(this.baseUrl),
       reachable: false,
       defaultVoice: this.defaultVoice,
-      language: 'te',
+      defaultEnglishVoice: this.defaultEnglishVoice,
+      languages: ['en', 'te'],
     };
     if (!this.baseUrl) return base;
     try {
@@ -242,18 +288,22 @@ export class PiperTextToSpeech extends TextToSpeechProvider {
     }
   }
 
-  async #fetchWav(text, voice, lengthScale) {
+  async #fetchWav(text, voice, lengthScale, speakerId) {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), this.requestTimeoutMs);
     try {
+      const body = {
+        text,
+        voice,
+        length_scale: lengthScale,
+      };
+      if (speakerId != null) {
+        body.speaker_id = speakerId;
+      }
       const response = await this.fetchImpl(`${this.baseUrl}/synthesize`, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({
-          text,
-          voice,
-          length_scale: lengthScale,
-        }),
+        body: JSON.stringify(body),
         signal: controller.signal,
       });
 
@@ -273,15 +323,6 @@ export class PiperTextToSpeech extends TextToSpeechProvider {
             statusCode: 502,
           },
         );
-      }
-
-      const contentType = String(response.headers?.get?.('content-type') || '');
-      if (
-        contentType &&
-        !/wav|audio|octet-stream/i.test(contentType) &&
-        !/application\/octet-stream/i.test(contentType)
-      ) {
-        // Soft check — some servers omit or use generic types
       }
 
       const ab = await response.arrayBuffer();
@@ -327,6 +368,8 @@ export class PiperTextToSpeech extends TextToSpeechProvider {
     }
   }
 }
+
+export { defaultPiperVoiceForLanguage };
 
 function clampSpeed(speed, bounds = {}) {
   const min = Number(bounds.minSpeed ?? 0.75);
