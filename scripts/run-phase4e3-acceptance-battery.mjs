@@ -196,7 +196,7 @@ function sim(language, scenario, { expectMock = false, attempts = 3 } = {}) {
         timeout: 180_000,
         env: {
           SIMULATOR_TRAILING_SILENCE_MS:
-            process.env.SIMULATOR_TRAILING_SILENCE_MS || '2000',
+            process.env.SIMULATOR_TRAILING_SILENCE_MS || '2500',
         },
       },
     );

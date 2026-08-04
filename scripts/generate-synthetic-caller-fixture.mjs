@@ -111,6 +111,8 @@ async function synthesizeWithPiper(text, { language, voice, speakerId }) {
     language,
     voice: selected,
     speakerId: sid,
+    // Slightly slower speech improves Whisper-small recall on 8 kHz fixtures.
+    speed: Number(process.env.FIXTURE_PIPER_SPEED || 0.9),
   });
   return {
     mulaw: result.audio,
