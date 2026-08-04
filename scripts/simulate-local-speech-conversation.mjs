@@ -37,7 +37,7 @@ export const SCENARIOS = {
     book_demo: { text: 'I want to book a demo', intent: 'BOOK_DEMO' },
     callback: { text: 'Please call me back tomorrow', intent: 'CALLBACK' },
     not_interested: { text: 'no thank you', intent: 'NOT_INTERESTED' },
-    do_not_call: { text: 'stop calling me', intent: 'DO_NOT_CALL' },
+    do_not_call: { text: 'remove my number', intent: 'DO_NOT_CALL' },
     human_agent: { text: 'transfer to agent', intent: 'HUMAN_AGENT' },
     unknown_then_dtmf: { text: 'asdf qwerty zz', intent: 'UNKNOWN' },
   },
