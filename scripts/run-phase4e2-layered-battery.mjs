@@ -114,7 +114,9 @@ if (shouldRun('A')) {
     signal: prep.signal,
     error: prep.json?.error || null,
     stderrTail: String(prep.stderr || '').slice(-800),
-    stdoutHead: String(prep.json?.stdoutHead || prep.json?.parseError ? JSON.stringify(prep.json).slice(0, 500) : ''),
+    stdoutHead: prep.json?.parseError
+      ? JSON.stringify(prep.json).slice(0, 500)
+      : String(prep.stdout || '').slice(0, 200),
     count: prep.json?.count ?? null,
     parseError: prep.json?.parseError === true,
   };
