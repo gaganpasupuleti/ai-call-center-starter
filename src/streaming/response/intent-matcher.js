@@ -37,6 +37,22 @@ export function softenTeluguAsr(text) {
     [/\bco-interest\b/gi, 'interest'],
   ];
   for (const [re, to] of replacements) t = t.replace(re, to);
+  return softenNotInterestedTruncation(t);
+}
+
+/**
+ * Faster-Whisper often truncates "interested" mid-word under short VAD windows.
+ * Recover only unambiguous truncations before intent match.
+ */
+export function softenNotInterestedTruncation(text) {
+  let t = String(text ?? '');
+  const replacements = [
+    [/\bi\s+am\s+not\s+in\b/gi, 'i am not interested'],
+    [/\bi'?m\s+not\s+in\b/gi, 'i am not interested'],
+    [/\bnot\s+interest\b/gi, 'not interested'],
+    [/\bnot\s+intereste\b/gi, 'not interested'],
+  ];
+  for (const [re, to] of replacements) t = t.replace(re, to);
   return t;
 }
 
@@ -163,7 +179,8 @@ function scoreIntent(intentName, config, normalized, tokens, state) {
 }
 
 export function matchIntent(text, { language = 'en', state = 'waiting_for_initial_response' } = {}) {
-  const softened = language === 'te' ? softenTeluguAsr(text) : text;
+  const softened =
+    language === 'te' ? softenTeluguAsr(text) : softenNotInterestedTruncation(text);
   const normalized = normalizeText(softened);
   const tokens = tokenize(normalized);
 

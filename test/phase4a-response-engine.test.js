@@ -30,6 +30,13 @@ test('normalizeText lowercases English and strips punctuation', () => {
   );
 });
 
+test('truncated not-interested ASR recovers for English and Telugu packs', async () => {
+  const { matchIntent } = await import('../src/streaming/response/intent-matcher.js');
+  assert.equal(matchIntent('I am not in', { language: 'en' }).intent, 'NOT_INTERESTED');
+  assert.equal(matchIntent('I am not in', { language: 'te' }).intent, 'NOT_INTERESTED');
+  assert.equal(matchIntent('not interest', { language: 'en' }).intent, 'NOT_INTERESTED');
+});
+
 test('normalizeText preserves Telugu and handles null', () => {
   assert.equal(normalizeText(null), '');
   assert.equal(normalizeText(undefined), '');

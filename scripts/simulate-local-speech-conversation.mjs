@@ -36,8 +36,9 @@ export const SCENARIOS = {
     send_details: { text: 'Please send me the course details', intent: 'SEND_DETAILS' },
     book_demo: { text: 'I want to book a demo', intent: 'BOOK_DEMO' },
     callback: { text: 'Please call me back tomorrow', intent: 'CALLBACK' },
-    // Short phrase: longer "I am not interested" often truncates mid-word under VAD.
-    not_interested: { text: 'No thanks', intent: 'NOT_INTERESTED' },
+    // Longer than "No thanks" so Silero meets min-speech; ends with thank-you padding
+    // so mid-word truncation of "interested" is recoverable.
+    not_interested: { text: 'I am not interested thank you', intent: 'NOT_INTERESTED' },
     do_not_call: { text: 'please remove my number', intent: 'DO_NOT_CALL' },
     human_agent: { text: 'human agent', intent: 'HUMAN_AGENT' },
     unknown_then_dtmf: { text: 'asdf qwerty zz', intent: 'UNKNOWN' },
@@ -55,7 +56,7 @@ export const SCENARIOS = {
       fixtureSynthLanguage: 'en',
     },
     not_interested: {
-      text: 'No thanks',
+      text: 'I am not interested thank you',
       intent: 'NOT_INTERESTED',
       fixtureSynthLanguage: 'en',
     },
