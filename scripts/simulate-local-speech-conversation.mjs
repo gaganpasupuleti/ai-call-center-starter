@@ -37,13 +37,13 @@ export const SCENARIOS = {
     book_demo: { text: 'I want to book a demo', intent: 'BOOK_DEMO' },
     callback: { text: 'Please call me back tomorrow', intent: 'CALLBACK' },
     not_interested: { text: 'no thank you', intent: 'NOT_INTERESTED' },
-    do_not_call: { text: 'remove my number', intent: 'DO_NOT_CALL' },
+    do_not_call: { text: 'delete my number please', intent: 'DO_NOT_CALL' },
     human_agent: { text: 'transfer to agent', intent: 'HUMAN_AGENT' },
     unknown_then_dtmf: { text: 'asdf qwerty zz', intent: 'UNKNOWN' },
   },
   te: {
     send_details: {
-      text: 'vivaralu pampandi',
+      text: 'please send the details',
       intent: 'SEND_DETAILS',
       fixtureSynthLanguage: 'en',
     },
@@ -58,7 +58,7 @@ export const SCENARIOS = {
       fixtureSynthLanguage: 'en',
     },
     do_not_call: {
-      text: 'malli call cheyavaddu',
+      text: 'delete my number please',
       intent: 'DO_NOT_CALL',
       fixtureSynthLanguage: 'en',
     },

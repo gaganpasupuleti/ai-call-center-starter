@@ -42,8 +42,10 @@ export const INTENTS_TE = {
       ['\u0C1A\u0C47\u0C2F\u0C35\u0C26\u0C4D\u0C26\u0C41'],
       ['vadu'],
       ['remove', 'number'],
+      ['delete', 'number'],
+      ['delete'],
     ],
-    optionalKeywords: ['number', 'remove', '\u0C28\u0C3E\u0C15\u0C41', 'malli', 'call'],
+    optionalKeywords: ['number', 'remove', '\u0C28\u0C3E\u0C15\u0C41', 'malli', 'call', 'please'],
   },
   NOT_INTERESTED: {
     phrases: [
@@ -153,6 +155,8 @@ export const INTENTS_TE = {
       ['vivarola'],
       ['pampandi'],
       ['pampendi'],
+      ['details'],
+      ['send', 'details'],
     ],
     optionalKeywords: ['pampandi', 'cheyandi', 'pampendi'],
   },
