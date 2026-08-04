@@ -55,6 +55,8 @@ export function softenNotInterestedTruncation(text) {
     // Whisper often hears "number" as "notes" in remove-my-number phrases.
     [/\bremove\s+my\s+notes\b/gi, 'remove my number'],
     [/\bdelete\s+my\s+notes\b/gi, 'delete my number'],
+    // Partial stop-calling utterances (not bare "stop" alone).
+    [/\bstop\s+call(?:ing)?(?:\s+me)?\b/gi, 'stop calling me'],
   ];
   for (const [re, to] of replacements) t = t.replace(re, to);
   return t;
