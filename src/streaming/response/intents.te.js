@@ -66,6 +66,9 @@ export const INTENTS_TE = {
       'i am not interested',
       'no thanks',
       'no thank you',
+      'i do not want it',
+      'i dont want it',
+      "i don't want it",
     ],
     requiredKeywords: [
       ['\u0C06\u0C38\u0C15\u0C4D\u0C24\u0C3F', '\u0C32\u0C47\u0C26\u0C41'],
@@ -75,6 +78,8 @@ export const INTENTS_TE = {
       ['vaddu'],
       ['no', 'thank'],
       ['no', 'thanks'],
+      ['do', 'not', 'want'],
+      ['dont', 'want'],
     ],
     optionalKeywords: ['naku'],
     negationOf: ['INTERESTED'],
