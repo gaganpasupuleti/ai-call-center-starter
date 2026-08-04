@@ -209,6 +209,7 @@ function sim(language, scenario, { expectMock = false, attempts = 2 } = {}) {
             String(j.ttsVoice || '').includes('libritts')
           : j.ttsVoice === 'te_IN-padmavathi-medium' ||
             String(j.ttsVoice || '').includes('padmavathi')));
+    // Telugu STT may return romanized text; accept matched intent under session language te.
     last = {
       scenario,
       attempt,
@@ -222,6 +223,7 @@ function sim(language, scenario, { expectMock = false, attempts = 2 } = {}) {
         (j.telephoneCalls ?? 0) === 0,
       transcript: j.actualTranscript ?? null,
       intent: j.intent ?? null,
+      expectedIntent: j.expectedIntent ?? null,
       ttsProvider: j.ttsProvider ?? null,
       ttsVoice: j.ttsVoice ?? null,
       speakerId: j.ttsSpeakerId ?? j.turn?.speakerId ?? null,

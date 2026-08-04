@@ -131,12 +131,13 @@ async function main() {
       writeFileSync(outPath, tone);
     } else {
       const script = path.resolve('scripts/generate-synthetic-caller-fixture.mjs');
+      const synthLanguage = scenario.fixtureSynthLanguage || entry.language;
       const result = spawnSync(
         process.execPath,
         [
           script,
           '--language',
-          entry.language,
+          synthLanguage,
           '--text',
           scenario.text,
           '--out',

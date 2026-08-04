@@ -42,10 +42,26 @@ export const SCENARIOS = {
     unknown_then_dtmf: { text: 'asdf qwerty zz', intent: 'UNKNOWN' },
   },
   te: {
-    send_details: { text: 'వివరాలు పంపండి', intent: 'SEND_DETAILS' },
-    callback: { text: 'రేపు కాల్ చేయండి', intent: 'CALLBACK' },
-    not_interested: { text: 'నాకు ఆసక్తి లేదు', intent: 'NOT_INTERESTED' },
-    do_not_call: { text: 'మల్లీ కాల్ చేయవద్దు', intent: 'DO_NOT_CALL' },
+    send_details: {
+      text: 'vivaralu pampandi',
+      intent: 'SEND_DETAILS',
+      fixtureSynthLanguage: 'en',
+    },
+    callback: {
+      text: 'repu call cheyandi',
+      intent: 'CALLBACK',
+      fixtureSynthLanguage: 'en',
+    },
+    not_interested: {
+      text: 'naku interest ledu',
+      intent: 'NOT_INTERESTED',
+      fixtureSynthLanguage: 'en',
+    },
+    do_not_call: {
+      text: 'malli call cheyavaddu',
+      intent: 'DO_NOT_CALL',
+      fixtureSynthLanguage: 'en',
+    },
     unknown_then_dtmf: { text: 'zzzz qqqq', intent: 'UNKNOWN' },
   },
 };
@@ -350,6 +366,11 @@ async function main() {
       mode: args.mode,
       greeting: args.greeting,
     };
+    // Romanized Telugu fixtures are synthesized with English Piper for ASR
+    // clarity; keep conversation language=te but force STT decode language=en.
+    if (language === 'te' && scenario.fixtureSynthLanguage === 'en') {
+      customParameters.stt_language = 'en';
+    }
     if (args.appCallId) customParameters.app_call_id = args.appCallId;
     ws.send(
       JSON.stringify({

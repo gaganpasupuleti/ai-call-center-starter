@@ -24,8 +24,9 @@ export class AdmissionsResponseEngine {
   async respond({ text, session } = {}) {
     const transcript = text == null ? '' : String(text);
     const sessionLangRaw = String(
-      session?.metadata?.sttLanguage ||
-        session?.customParameters?.language ||
+      session?.customParameters?.language ||
+        session?.metadata?.conversationLanguage ||
+        session?.metadata?.sttLanguage ||
         session?.customParameters?.stt_language ||
         '',
     )

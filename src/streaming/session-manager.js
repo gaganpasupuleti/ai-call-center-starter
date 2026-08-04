@@ -30,8 +30,8 @@ function nowIso() {
 
 function resolveSttLanguage(session, sttConfig = {}) {
   const fromParams =
-    session?.customParameters?.language ||
     session?.customParameters?.stt_language ||
+    session?.customParameters?.language ||
     session?.metadata?.sttLanguage;
   const raw = String(fromParams || sttConfig.defaultLanguage || 'en')
     .trim()
