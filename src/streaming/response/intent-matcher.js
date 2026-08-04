@@ -16,6 +16,25 @@ const NEGATION_MARKERS = [
   '\u0C15\u0C3E\u0C26\u0C41',
 ];
 
+/** Map common Faster-Whisper romanization errors onto intent vocabulary. */
+export function softenTeluguAsr(text) {
+  let t = String(text ?? '');
+  const replacements = [
+    [/\bpimpin['’]?/gi, 'pampandi'],
+    [/\bpampendi\b/gi, 'pampandi'],
+    [/\bvivarola\b/gi, 'vivaralu'],
+    [/\brepru\w*/gi, 'repu'],
+    [/\bpoon\b/gi, 'repu'],
+    [/\bcheyenne\b/gi, 'cheyandi'],
+    [/\bvadim\b/gi, 'vadu'],
+    [/\bmalikul\w*/gi, 'malli'],
+    [/\bmalik\w*/gi, 'malli'],
+    [/\binterest\s+led\b/gi, 'interest ledu'],
+  ];
+  for (const [re, to] of replacements) t = t.replace(re, to);
+  return t;
+}
+
 const TELUGU_RE = /[\u0C00-\u0C7F]/;
 const TRANSLIT_HINTS = [
   'undi',
@@ -133,7 +152,8 @@ function scoreIntent(intentName, config, normalized, tokens, state) {
 }
 
 export function matchIntent(text, { language = 'en', state = 'waiting_for_initial_response' } = {}) {
-  const normalized = normalizeText(text);
+  const softened = language === 'te' ? softenTeluguAsr(text) : text;
+  const normalized = normalizeText(softened);
   const tokens = tokenize(normalized);
 
   if (!normalized) {
