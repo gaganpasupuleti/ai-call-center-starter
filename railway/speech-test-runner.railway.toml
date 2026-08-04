@@ -1,9 +1,9 @@
 # One-shot private speech test runner (no public domain).
-# Start command overridden to the layered 4E.2 battery.
+# Start command overridden to the Phase 4E.3 acceptance battery.
 
 [build]
 builder = "NIXPACKS"
 
 [deploy]
-startCommand = "node scripts/run-phase4e2-layered-battery.mjs"
+startCommand = "node scripts/run-phase4e3-acceptance-battery.mjs"
 restartPolicyType = "NEVER"
