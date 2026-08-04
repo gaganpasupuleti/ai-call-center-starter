@@ -114,6 +114,7 @@ if ([...selected].some((g) => ['C', 'E', 'F'].includes(g)) || selected.has('D'))
       '--dir',
       fixtureDir,
       '--keep-fixtures',
+      '--no-reuse',
     ],
     { timeout: 600_000 },
   );
@@ -278,11 +279,17 @@ if (want('C', selected)) {
   ];
   for (const scenario of enScenarios) {
     summary.gateC.en.push(sim('en', scenario, { expectMock: true }));
+    spawnSync(process.execPath, ['-e', 'Atomics.wait(new Int32Array(new SharedArrayBuffer(4)),0,0,1500)'], {
+      timeout: 5_000,
+    });
   }
   summary.gates.C_en = summary.gateC.en.every((x) => x.ok);
   if (!summary.gates.C_en) stop(summary, 'gate_C_en');
   for (const scenario of teScenarios) {
     summary.gateC.te.push(sim('te', scenario, { expectMock: true }));
+    spawnSync(process.execPath, ['-e', 'Atomics.wait(new Int32Array(new SharedArrayBuffer(4)),0,0,1500)'], {
+      timeout: 5_000,
+    });
   }
   summary.gates.C_te = summary.gateC.te.every((x) => x.ok);
   if (!summary.gates.C_te) stop(summary, 'gate_C_te');

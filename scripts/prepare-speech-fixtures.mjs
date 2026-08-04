@@ -110,9 +110,11 @@ async function main() {
     if (!scenario) throw new Error(`unknown scenario ${entry.scenario}`);
 
     if (args.reuse && existsSync(outPath) && existing?.fixtures?.some((f) => f.file === entry.file)) {
+      const prior = existing.fixtures.find((f) => f.file === entry.file);
       const bytes = readFileSync(outPath);
       const validation = validateMulawFixture(bytes);
-      if (validation.valid) {
+      // Invalidate reuse when scenario text changed (common after ASR fixture tweaks).
+      if (validation.valid && prior?.text === scenario.text) {
         return {
           ...entry,
           text: scenario.text,
