@@ -61,6 +61,11 @@ export const INTENTS_TE = {
       'vaddu',
       'no interest ledu',
       'interest led',
+      // English ASR fixtures used for Gate C/F Telugu sessions
+      'not interested',
+      'i am not interested',
+      'no thanks',
+      'no thank you',
     ],
     requiredKeywords: [
       ['\u0C06\u0C38\u0C15\u0C4D\u0C24\u0C3F', '\u0C32\u0C47\u0C26\u0C41'],
