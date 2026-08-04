@@ -78,8 +78,14 @@ function phraseMatch(normalized, phrases = []) {
   for (const phrase of phrases) {
     const p = normalizeText(phrase);
     if (!p) continue;
-    if (normalized === p || normalized.includes(p)) {
-      return { matched: true, score: normalized === p ? 1 : 0.92 };
+    if (normalized === p) {
+      return { matched: true, score: 1 };
+    }
+    // Word-boundary match — avoid "no" matching inside "not".
+    const escaped = p.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/\s+/g, '\\s+');
+    const re = new RegExp(`(?:^|\\s)${escaped}(?:\\s|$)`, 'u');
+    if (re.test(normalized)) {
+      return { matched: true, score: 0.92 };
     }
   }
   return { matched: false, score: 0 };

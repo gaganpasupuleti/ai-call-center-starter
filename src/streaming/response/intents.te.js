@@ -66,6 +66,7 @@ export const INTENTS_TE = {
       ['\u0C06\u0C38\u0C15\u0C4D\u0C24\u0C3F', '\u0C32\u0C47\u0C26\u0C41'],
       ['interest', 'ledu'],
       ['interest', 'led'],
+      ['not', 'interested'],
       ['vaddu'],
       ['no', 'thank'],
       ['no', 'thanks'],
