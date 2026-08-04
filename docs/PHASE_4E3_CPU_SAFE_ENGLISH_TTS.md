@@ -75,17 +75,49 @@ Do not re-run the 20× Kokoro acceptance battery on this hardware.
 or Piper). Runtime uses `PRECOMPUTED_AUDIO_*` + volume `/response-audio` when enabled.
 Catalog miss falls back to Piper — never to cloud TTS and never auto-Kokoro in CPU mode.
 
-## Results (fill during Railway battery)
+## Results (speech-e2e Railway battery)
 
 | Gate | Result |
 |------|--------|
-| C — STT + mock TTS | TBD |
-| D — Piper EN 20/20 c1 | TBD |
-| D — Piper TE 20/20 c1 | TBD |
-| E — full English local-cpu | TBD |
-| F — full Telugu | TBD |
-| Failure drills | TBD |
+| C — STT + mock TTS | **PASS** (EN 5/5, TE 4/4; mock-tts; `telephoneCalls=0`) |
+| D — Piper EN 20/20 c1 | **PASS** (warm p95 ≈ 1.1 s; hard timeout 10 s) |
+| D — Piper TE 20/20 c1 | **PASS** (warm p95 ≈ 1.0 s) |
+| D — Kokoro CPU | **not required** (`kokoro_cpu_runtime_accepted=false`) |
+| E — full English local-cpu | **PASS** (10/10; `piper-local` / `en_US-libritts_r-medium`) |
+| F — full Telugu local-cpu | **PASS** (10/10; `piper-local` / `te_IN-padmavathi-medium`) |
+| Failure drills | **PASS** (STT down, Piper down, rollback; unit coverage for speaker/queue/late results) |
+
+### Gate C transcripts (representative)
+
+English: course details → `SEND_DETAILS`; call me back → `CALLBACK`; I do not want it → `NOT_INTERESTED`; do not call me again → `DO_NOT_CALL`; Human AIDS. → `HUMAN_AGENT` (ASR quirk, intent OK).
+
+Telugu sessions (English ASR fixtures + `language=te`): send details / call tomorrow / I do not want it / do not call me → expected intents.
+
+### Latency (post Gate E/F readiness sample)
+
+| Metric | Observed |
+|--------|----------|
+| STT p95 | ≈ 956 ms |
+| Piper TTS p95 | ≈ 1763 ms (under 5 s) |
+| Turn p95 | ≈ 3429 ms (under 12 s speech-end→bot budget) |
+| Response engine | deterministic; sub-100 ms class locally |
+
+### Failure drills
+
+| Drill | Result |
+|-------|--------|
+| STT unavailable | App `/healthz` ok; readiness `ready=false`, STT unreachable; no cloud fallback; restored |
+| Piper unavailable | App healthy; both EN/TE Piper unreachable; Kokoro optional still up but **not** auto-selected; restored |
+| Invalid speaker ID | Unit: `piper_speaker_not_allowed` |
+| Late transcript / late TTS / queue full | Covered by existing conversation + TTS unit tests |
+| Rollback (`VOICE_CONVERSATION_ENABLED=false`, mock STT/TTS, DTMF) | App starts; speech optional; restored to `local-cpu` |
+
+### Kokoro disposition
+
+Keep deployed as **optional** on speech-e2e for offline catalog / quality work. Not required for `local-cpu` readiness. Not approved for conversational runtime on current Railway CPU. May be stopped later to save resources.
 
 ## Go / no-go for Phase 4F
 
-**NO-GO** until Gates C–F and failure drills pass on `speech-e2e`.
+**GO** for Phase 4F planning on the `local-cpu` path (Gates C–F + drills + rollback verified on `speech-e2e`).
+
+Remaining non-blockers: optional precomputed catalog volume not enabled; Gate E battery does not always surface `speakerId` in the JSON summary (config `PIPER_ENGLISH_SPEAKER_ID=0`); human listening QA of LibriTTS speaker 0 not claimed.

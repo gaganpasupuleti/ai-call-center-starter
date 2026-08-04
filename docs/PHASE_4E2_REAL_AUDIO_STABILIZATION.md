@@ -158,6 +158,4 @@ Not yet executed on Railway in this run. Local rollback config + `npm run verify
 
 ## Go / no-go for Phase 4F
 
-**Current decision: NO-GO** (await Phase 4E.3 Piper Gates C–F).
-
-Gates A (fixtures) and B (direct STT finalize-by-silence) are proven on Railway. Full-stack English/Telugu acceptance continues under `VOICE_TTS_PROVIDER=local-cpu`.
+**Current decision: GO for Phase 4F planning** after Phase 4E.3 Gates C–F + drills on `local-cpu` (see [PHASE_4E3_CPU_SAFE_ENGLISH_TTS.md](./PHASE_4E3_CPU_SAFE_ENGLISH_TTS.md)). Historical 4E.2 Kokoro Gate D remains failed/not accepted on Railway CPU.
