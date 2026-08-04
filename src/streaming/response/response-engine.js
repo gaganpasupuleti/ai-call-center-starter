@@ -23,7 +23,25 @@ export class AdmissionsResponseEngine {
 
   async respond({ text, session } = {}) {
     const transcript = text == null ? '' : String(text);
-    const language = detectLanguage(transcript) || this.defaultLanguage;
+    const sessionLangRaw = String(
+      session?.metadata?.sttLanguage ||
+        session?.customParameters?.language ||
+        session?.customParameters?.stt_language ||
+        '',
+    )
+      .trim()
+      .toLowerCase();
+    const sessionLang =
+      sessionLangRaw === 'te' || sessionLangRaw === 'telugu'
+        ? 'te'
+        : sessionLangRaw === 'en' || sessionLangRaw === 'english'
+          ? 'en'
+          : null;
+    const detected = detectLanguage(transcript);
+    // Prefer the STT session language for TE calls so romanized / noisy
+    // Telugu transcripts still use the Telugu intent catalog.
+    const language =
+      sessionLang === 'te' ? 'te' : detected || sessionLang || this.defaultLanguage;
     const responses = language === 'te' ? RESPONSES_TE : RESPONSES_EN;
     const currentState = getConversationState(session);
 

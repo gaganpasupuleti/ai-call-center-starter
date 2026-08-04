@@ -130,6 +130,13 @@ class FasterWhisperTranscriber:
         bio.name = "utterance.wav"
         started = time.perf_counter()
         whisper_language = None if language == "auto" else language
+        initial_prompt = None
+        if language == "te":
+            # Bias decode toward Telugu admissions phrases (not translated).
+            initial_prompt = (
+                "వివరాలు పంపండి. రేపు కాల్ చేయండి. "
+                "నాకు ఆసక్తి లేదు. మల్లీ కాల్ చేయవద్దు."
+            )
         segments, info = model.transcribe(
             bio,
             language=whisper_language,
@@ -140,6 +147,7 @@ class FasterWhisperTranscriber:
             ),
             word_timestamps=False,
             vad_filter=False,
+            initial_prompt=initial_prompt,
         )
         text = " ".join(seg.text.strip() for seg in segments if seg.text).strip()
         elapsed_ms = int((time.perf_counter() - started) * 1000)

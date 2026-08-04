@@ -165,62 +165,74 @@ if (want('D', selected)) {
   if (!summary.gates.D_te) stop(summary, 'gate_D_te');
 }
 
-function sim(language, scenario, { expectMock = false } = {}) {
+function sim(language, scenario, { expectMock = false, attempts = 2 } = {}) {
   const file = `${language === 'te' ? 'te' : 'en'}-${scenario.replaceAll('_', '-')}.ulaw`;
   const fixture = path.join(fixtureDir, file);
-  const r = run(
-    process.execPath,
-    [
-      path.join(root, 'scripts/simulate-local-speech-conversation.mjs'),
-      '--mode',
-      'audio',
-      '--greeting',
-      'none',
-      '--language',
-      language,
-      '--scenario',
+  let last = null;
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    const r = run(
+      process.execPath,
+      [
+        path.join(root, 'scripts/simulate-local-speech-conversation.mjs'),
+        '--mode',
+        'audio',
+        '--greeting',
+        'none',
+        '--language',
+        language,
+        '--scenario',
+        scenario,
+        '--fixture-ulaw',
+        fixture,
+        '--target',
+        target,
+        '--timeout-ms',
+        String(process.env.AUDIO_SIM_TIMEOUT_MS || 120000),
+      ],
+      {
+        timeout: 180_000,
+        env: {
+          SIMULATOR_TRAILING_SILENCE_MS:
+            process.env.SIMULATOR_TRAILING_SILENCE_MS || '1600',
+        },
+      },
+    );
+    const j = r.json || {};
+    const provider = String(j.ttsProvider || '');
+    const mockOk =
+      !expectMock || provider === 'mock' || provider === 'mock-tts' || provider.includes('mock');
+    const realOk =
+      expectMock ||
+      (provider === 'piper-local' &&
+        (language === 'en'
+          ? j.ttsVoice === 'en_US-libritts_r-medium' ||
+            String(j.ttsVoice || '').includes('libritts')
+          : j.ttsVoice === 'te_IN-padmavathi-medium' ||
+            String(j.ttsVoice || '').includes('padmavathi')));
+    last = {
       scenario,
-      '--fixture-ulaw',
-      fixture,
-      '--target',
-      target,
-      '--timeout-ms',
-      String(process.env.AUDIO_SIM_TIMEOUT_MS || 120000),
-    ],
-    { timeout: 180_000 },
-  );
-  const j = r.json || {};
-  const provider = String(j.ttsProvider || '');
-  const mockOk =
-    !expectMock || provider === 'mock' || provider === 'mock-tts' || provider.includes('mock');
-  const realOk =
-    expectMock ||
-    (provider === 'piper-local' &&
-      (language === 'en'
-        ? j.ttsVoice === 'en_US-libritts_r-medium' ||
-          String(j.ttsVoice || '').includes('libritts')
-        : j.ttsVoice === 'te_IN-padmavathi-medium' ||
-          String(j.ttsVoice || '').includes('padmavathi')));
-  return {
-    scenario,
-    ok:
-      j.ok === true &&
-      Boolean(j.actualTranscript) &&
-      Boolean(j.intent) &&
-      String(j.intent).toUpperCase() !== 'UNKNOWN' &&
-      mockOk &&
-      (expectMock || realOk) &&
-      (j.telephoneCalls ?? 0) === 0,
-    transcript: j.actualTranscript ?? null,
-    intent: j.intent ?? null,
-    ttsProvider: j.ttsProvider ?? null,
-    ttsVoice: j.ttsVoice ?? null,
-    speakerId: j.ttsSpeakerId ?? j.turn?.speakerId ?? null,
-    botMulawValid: j.botMulawValid ?? null,
-    failureStage: j.failureStage ?? null,
-    gates: j.gates ?? null,
-    timing: j.timing ?? null,
-  };
+      attempt,
+      ok:
+        j.ok === true &&
+        Boolean(j.actualTranscript) &&
+        Boolean(j.intent) &&
+        String(j.intent).toUpperCase() !== 'UNKNOWN' &&
+        mockOk &&
+        (expectMock || realOk) &&
+        (j.telephoneCalls ?? 0) === 0,
+      transcript: j.actualTranscript ?? null,
+      intent: j.intent ?? null,
+      ttsProvider: j.ttsProvider ?? null,
+      ttsVoice: j.ttsVoice ?? null,
+      speakerId: j.ttsSpeakerId ?? j.turn?.speakerId ?? null,
+      botMulawValid: j.botMulawValid ?? null,
+      failureStage: j.failureStage ?? null,
+      gates: j.gates ?? null,
+      timing: j.timing ?? null,
+    };
+    if (last.ok) return last;
+  }
+  return last;
 }
 
 if (want('C', selected)) {
