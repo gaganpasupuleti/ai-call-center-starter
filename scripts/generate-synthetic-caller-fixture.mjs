@@ -55,7 +55,11 @@ async function synthesizeEnglish(text, voice) {
     cacheEnabled: false,
     retryOnce: true,
     connectTimeoutMs: Number(process.env.TTS_CONNECT_TIMEOUT_MS || 10_000),
-    requestTimeoutMs: Number(process.env.TTS_REQUEST_TIMEOUT_MS || 90_000),
+    requestTimeoutMs: Number(
+      process.env.FIXTURE_TTS_REQUEST_TIMEOUT_MS ||
+        process.env.TTS_REQUEST_TIMEOUT_MS ||
+        120_000,
+    ),
   });
   const result = await tts.synthesize({ text, language: 'en', voice: selected });
   return {
@@ -78,7 +82,11 @@ async function synthesizeTelugu(text, voice) {
     cacheEnabled: false,
     retryOnce: true,
     connectTimeoutMs: Number(process.env.TTS_CONNECT_TIMEOUT_MS || 10_000),
-    requestTimeoutMs: Number(process.env.TTS_REQUEST_TIMEOUT_MS || 90_000),
+    requestTimeoutMs: Number(
+      process.env.FIXTURE_TTS_REQUEST_TIMEOUT_MS ||
+        process.env.TTS_REQUEST_TIMEOUT_MS ||
+        120_000,
+    ),
   });
   const result = await tts.synthesize({ text, language: 'te', voice: selected });
   return {

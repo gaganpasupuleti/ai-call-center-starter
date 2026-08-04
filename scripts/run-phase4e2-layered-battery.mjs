@@ -60,8 +60,15 @@ const prep = run(process.execPath, [
   '--dir',
   fixtureDir,
   '--keep-fixtures',
-]);
+], { timeout: 600_000 });
 summary.gates.A_fixtures = prep.json?.ok === true;
+summary.gateA = {
+  ok: prep.json?.ok === true,
+  status: prep.status,
+  error: prep.json?.error || null,
+  stderrTail: String(prep.stderr || '').slice(-500),
+  count: prep.json?.count ?? null,
+};
 if (!summary.gates.A_fixtures) stop(summary, 'gate_A_fixtures');
 
 console.error('Gate B — direct STT EN/TE (5 each)');
