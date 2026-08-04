@@ -93,6 +93,7 @@ export const INTENTS_TE = {
       ['\u0C30\u0C47\u0C2A\u0C41', '\u0C15\u0C3E\u0C32\u0C4D'],
       ['\u0C24\u0C30\u0C4D\u0C35\u0C3E\u0C24', '\u0C15\u0C3E\u0C32\u0C4D'],
       ['repu', 'call'],
+      ['repu'],
       ['tarvata', 'call'],
       ['later', 'call'],
       ['busy'],
