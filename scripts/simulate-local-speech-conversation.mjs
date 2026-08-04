@@ -36,8 +36,8 @@ export const SCENARIOS = {
     send_details: { text: 'Please send me the course details', intent: 'SEND_DETAILS' },
     book_demo: { text: 'I want to book a demo', intent: 'BOOK_DEMO' },
     callback: { text: 'Please call me back tomorrow', intent: 'CALLBACK' },
-    // Prefer short thank-you form: "interested" is frequently truncated by Whisper.
-    not_interested: { text: 'No thank you', intent: 'NOT_INTERESTED' },
+    // Prefer phrases Whisper decodes cleanly; "No thank you" often becomes "No thing".
+    not_interested: { text: 'I do not want it', intent: 'NOT_INTERESTED' },
     do_not_call: { text: 'Please do not call me again', intent: 'DO_NOT_CALL' },
     human_agent: { text: 'human agent', intent: 'HUMAN_AGENT' },
     unknown_then_dtmf: { text: 'asdf qwerty zz', intent: 'UNKNOWN' },
@@ -55,7 +55,7 @@ export const SCENARIOS = {
       fixtureSynthLanguage: 'en',
     },
     not_interested: {
-      text: 'No thank you',
+      text: 'I do not want it',
       intent: 'NOT_INTERESTED',
       fixtureSynthLanguage: 'en',
     },

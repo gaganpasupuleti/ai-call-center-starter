@@ -57,6 +57,8 @@ export function softenNotInterestedTruncation(text) {
     [/\bdelete\s+my\s+notes\b/gi, 'delete my number'],
     // Partial stop-calling utterances (not bare "stop" alone).
     [/\bstop\s+call(?:ing)?(?:\s+me)?\b/gi, 'stop calling me'],
+    // "No thank you" frequently becomes "No thing".
+    [/\bno\s+thing\b/gi, 'no thank you'],
   ];
   for (const [re, to] of replacements) t = t.replace(re, to);
   return t;
