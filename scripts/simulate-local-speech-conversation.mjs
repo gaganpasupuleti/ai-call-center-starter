@@ -48,7 +48,7 @@ export const SCENARIOS = {
       fixtureSynthLanguage: 'en',
     },
     callback: {
-      text: 'repu call cheyandi',
+      text: 'please call me tomorrow',
       intent: 'CALLBACK',
       fixtureSynthLanguage: 'en',
     },

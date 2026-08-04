@@ -21,15 +21,20 @@ export function softenTeluguAsr(text) {
   let t = String(text ?? '');
   const replacements = [
     [/\bpimpin['’]?/gi, 'pampandi'],
+    [/\bpampin\b/gi, 'pampandi'],
     [/\bpampendi\b/gi, 'pampandi'],
     [/\bvivarola\b/gi, 'vivaralu'],
+    [/\bvarelu\b/gi, 'vivaralu'],
     [/\brepru\w*/gi, 'repu'],
+    [/\bpukul\b/gi, 'repu'],
     [/\bpoon\b/gi, 'repu'],
     [/\bcheyenne\b/gi, 'cheyandi'],
+    [/\bchan\b/gi, 'cheyandi'],
     [/\bvadim\b/gi, 'vadu'],
     [/\bmalikul\w*/gi, 'malli'],
     [/\bmalik\w*/gi, 'malli'],
     [/\binterest\s+led\b/gi, 'interest ledu'],
+    [/\bco-interest\b/gi, 'interest'],
   ];
   for (const [re, to] of replacements) t = t.replace(re, to);
   return t;
