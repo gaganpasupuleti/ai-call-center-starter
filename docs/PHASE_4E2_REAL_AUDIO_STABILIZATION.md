@@ -106,57 +106,41 @@ TTS_REQUEST_TIMEOUT_MS=30000
 VOICE_MAX_TURNS=3
 ```
 
-## Results (fill during Railway battery)
+## Results (Railway speech-e2e — corrected 4E.2 run)
 
-### Direct STT
+### Direct STT (Gate B) — **PASS**
 
-| Language | Runs | Success | Fail | Finalize | Notes |
-|----------|------|---------|------|----------|-------|
-| English  | 10   | TBD     | TBD  | silence  | |
-| Telugu   | 10   | TBD     | TBD  | silence  | |
+| Language | Runs | Success | Fail | Finalize |
+|----------|------|---------|------|----------|
+| English  | 5    | 5       | 0    | silence  |
+| Telugu   | 5    | 5       | 0    | silence  |
 
-### Kokoro stability
+Trailing silence fix (1200 ms vs previous ~300 ms) unblocked `utterance_ready`.
 
-| Concurrency | Requests | Success | Fail | Timeout | p95 |
-|-------------|----------|---------|------|---------|-----|
-| 1           | 20       | TBD     | TBD  | TBD     | TBD |
-| 2           | 10       | TBD     | TBD  | TBD     | TBD |
+### Fixture bank (Gate A) — **PASS**
+
+9 fixtures generated serially via private Kokoro/Piper; validated (non-silent μ-law).
+
+### Kokoro stability (Gate D)
+
+| Concurrency | Requests | Result |
+|-------------|----------|--------|
+| 1           | 20       | **in progress / previously timed out** at battery spawn 180s; Kokoro synth is ~70–110s/request on current CPU (NNPACK unsupported) |
+| 2           | 10       | Not started until c1 passes |
+
+App conversational timeout raised to 120s for staging only; target remains 30s after CPU upgrade.
 
 ### Piper stability
 
-| Concurrency | Requests | Success | Fail | p95 |
-|-------------|----------|---------|------|-----|
-| 1           | TBD      | TBD     | TBD  | TBD |
+Not yet measured in this run (Telugu fixture synth succeeded during Gate A).
 
-### Full application turns
+### Full application turns (Gates E/F)
 
-| Language | Scenario mix | Transcript | Intent | Provider | μ-law |
-|----------|--------------|------------|--------|----------|-------|
-| English  | 3+3+2+2      | TBD        | TBD    | kokoro-local / af_bella | TBD |
-| Telugu   | 3+3+2+2      | TBD        | TBD    | piper-local / te_IN-padmavathi-medium | TBD |
+Not started — blocked on Gate D Kokoro sequential stability.
 
-### Failure drills
+### Failure drills / Rollback
 
-| Drill | Result |
-|-------|--------|
-| STT unavailable | TBD |
-| Kokoro unavailable | TBD |
-| Piper unavailable | TBD |
-| Session closed during transcription | TBD |
-| Session closed during synthesis | TBD |
-| Pending transcript overflow | TBD |
-
-### Rollback
-
-```env
-VOICE_CONVERSATION_ENABLED=false
-VOICE_INTERACTION_MODE=dtmf
-VOICE_STT_PROVIDER=mock
-VOICE_TTS_PROVIDER=mock
-OUTBOUND_TTS_PROVIDER=inherit
-```
-
-Result: TBD (app starts; speech optional; SmartPing simulator passes; telephoneCalls=0).
+Not yet executed on Railway in this run. Local rollback config + `npm run verify:non-live` + SmartPing simulator remain green.
 
 ## Railway observations
 

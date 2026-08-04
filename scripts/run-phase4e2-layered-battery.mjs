@@ -26,20 +26,41 @@ function run(cmd, args, opts = {}) {
   });
   let json = null;
   const out = String(result.stdout || '');
-  const start = out.lastIndexOf('{');
-  try {
-    json = start >= 0 ? JSON.parse(out.slice(start)) : JSON.parse(out || '{}');
-  } catch {
+  // Find the last complete top-level JSON object by scanning for matching braces.
+  let parsed = null;
+  for (let i = out.length - 1; i >= 0; i -= 1) {
+    if (out[i] !== '}') continue;
+    // walk backward for matching '{'
+    let depth = 0;
+    for (let j = i; j >= 0; j -= 1) {
+      if (out[j] === '}') depth += 1;
+      else if (out[j] === '{') {
+        depth -= 1;
+        if (depth === 0) {
+          try {
+            parsed = JSON.parse(out.slice(j, i + 1));
+          } catch {
+            parsed = null;
+          }
+          break;
+        }
+      }
+    }
+    if (parsed) break;
+  }
+  if (parsed) {
+    json = parsed;
+  } else {
     json = {
       ok: false,
       parseError: true,
       signal: result.signal,
       status: result.status,
-      stdoutHead: out.slice(0, 400),
-      stderrHead: String(result.stderr || '').slice(0, 400),
+      stdoutHead: out.slice(0, 600),
+      stderrHead: String(result.stderr || '').slice(0, 600),
     };
   }
-  return { status: result.status, json, stderr: result.stderr, signal: result.signal };
+  return { status: result.status, json, stderr: result.stderr, signal: result.signal, stdout: out };
 }
 
 function stop(summary, reason) {
@@ -90,9 +111,12 @@ if (shouldRun('A')) {
   summary.gateA = {
     ok: prep.json?.ok === true,
     status: prep.status,
+    signal: prep.signal,
     error: prep.json?.error || null,
-    stderrTail: String(prep.stderr || '').slice(-500),
+    stderrTail: String(prep.stderr || '').slice(-800),
+    stdoutHead: String(prep.json?.stdoutHead || prep.json?.parseError ? JSON.stringify(prep.json).slice(0, 500) : ''),
     count: prep.json?.count ?? null,
+    parseError: prep.json?.parseError === true,
   };
   if (!summary.gates.A_fixtures) stop(summary, 'gate_A_fixtures');
 } else {
