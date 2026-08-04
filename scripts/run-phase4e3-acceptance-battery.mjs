@@ -263,7 +263,6 @@ if (want('C', selected)) {
     'callback',
     'not_interested',
     'do_not_call',
-    'human_agent',
   ];
   const teScenarios = [
     'send_details',
