@@ -116,7 +116,16 @@ class FasterWhisperTranscriber:
         sample_rate: int,
     ) -> TranscriptResult:
         model = self.registry.require_model()
-        wav_bytes = pcm_float32_to_wav_bytes(pcm_float32, sample_rate=sample_rate)
+        samples = np.asarray(pcm_float32, dtype=np.float32).reshape(-1)
+        # Whisper is trained at 16 kHz; upsample 8 kHz telephony audio before decode.
+        whisper_rate = 16_000
+        if sample_rate != whisper_rate and samples.size > 0 and sample_rate > 0:
+            target_n = max(1, int(round(samples.size * whisper_rate / float(sample_rate))))
+            src_x = np.linspace(0.0, 1.0, num=samples.size, endpoint=False)
+            dst_x = np.linspace(0.0, 1.0, num=target_n, endpoint=False)
+            samples = np.interp(dst_x, src_x, samples).astype(np.float32)
+            sample_rate = whisper_rate
+        wav_bytes = pcm_float32_to_wav_bytes(samples, sample_rate=sample_rate)
         bio = io.BytesIO(wav_bytes)
         bio.name = "utterance.wav"
         started = time.perf_counter()
@@ -136,7 +145,7 @@ class FasterWhisperTranscriber:
         elapsed_ms = int((time.perf_counter() - started) * 1000)
         detected = getattr(info, "language", whisper_language or "en")
         prob = getattr(info, "language_probability", None)
-        duration_ms = int(round(1000.0 * np.asarray(pcm_float32).size / sample_rate))
+        duration_ms = int(round(1000.0 * samples.size / sample_rate)) if sample_rate else 0
         # Never translate; keep detected language code as returned.
         return TranscriptResult(
             text=text,

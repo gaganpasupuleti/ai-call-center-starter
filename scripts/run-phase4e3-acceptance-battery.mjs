@@ -257,12 +257,12 @@ if (want('C', selected)) {
   for (const scenario of enScenarios) {
     summary.gateC.en.push(sim('en', scenario, { expectMock: true }));
   }
+  summary.gates.C_en = summary.gateC.en.every((x) => x.ok);
+  if (!summary.gates.C_en) stop(summary, 'gate_C_en');
   for (const scenario of teScenarios) {
     summary.gateC.te.push(sim('te', scenario, { expectMock: true }));
   }
-  summary.gates.C_en = summary.gateC.en.every((x) => x.ok);
   summary.gates.C_te = summary.gateC.te.every((x) => x.ok);
-  if (!summary.gates.C_en) stop(summary, 'gate_C_en');
   if (!summary.gates.C_te) stop(summary, 'gate_C_te');
 }
 
