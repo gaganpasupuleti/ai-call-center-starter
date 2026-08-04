@@ -151,12 +151,13 @@ Not yet executed on Railway in this run. Local rollback config + `npm run verify
 
 ## Remaining blockers
 
-_List honestly after the battery. Do not average away failed runs._
+1. **Kokoro CPU latency** — ~70–110 s per short `af_bella` synth on current Railway plan (NNPACK unsupported). Blocks a 30 s conversational TTS timeout and makes a 20-request concurrency-1 battery take ~30–40 minutes.
+2. **Gate D / E / F** — not yet green in the latest runner cycle (Gate D previously killed by a 180 s spawn timeout; timeout raised to 45 min; fixture prep must complete again on each ephemeral runner).
+3. **Failure drills** — not yet executed on Railway after a full EN/TE pass.
+4. **App var-triggered redeploys** — occasional FAILED deploys when variables change; latest app deploy SUCCESS and readiness green.
 
 ## Go / no-go for Phase 4F
 
-**Current decision: NO-GO until Gates A–F and failure drills pass.**
+**Current decision: NO-GO.**
 
-Preserve Phase 4E.1 historical failures in
-[PHASE_4E1_RAILWAY_BRINGUP.md](./PHASE_4E1_RAILWAY_BRINGUP.md); do not rewrite them.
-Append corrected 4E.2 runs here and in the 4E.1 appendix when available.
+Gates A (fixtures) and B (direct STT finalize-by-silence) are proven on Railway. Full-stack English/Telugu acceptance, Kokoro sequential stability (20×), failure drills, and a sustainable ≤30 s TTS path are not complete.
