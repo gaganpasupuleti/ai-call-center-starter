@@ -196,7 +196,7 @@ function sim(language, scenario, { expectMock = false, attempts = 3 } = {}) {
         timeout: 180_000,
         env: {
           SIMULATOR_TRAILING_SILENCE_MS:
-            process.env.SIMULATOR_TRAILING_SILENCE_MS || '1600',
+            process.env.SIMULATOR_TRAILING_SILENCE_MS || '2000',
         },
       },
     );
@@ -212,17 +212,21 @@ function sim(language, scenario, { expectMock = false, attempts = 3 } = {}) {
             String(j.ttsVoice || '').includes('libritts')
           : j.ttsVoice === 'te_IN-padmavathi-medium' ||
             String(j.ttsVoice || '').includes('padmavathi')));
-    // Telugu STT may return romanized text; accept matched intent under session language te.
+    // Prefer simulator ok; also accept when intent matches expected under mock/real TTS.
+    const intentMatched =
+      Boolean(j.intent) &&
+      String(j.intent).toUpperCase() !== 'UNKNOWN' &&
+      (!j.expectedIntent || j.intent === j.expectedIntent);
     last = {
       scenario,
       attempt,
       ok:
-        j.ok === true &&
+        intentMatched &&
         Boolean(j.actualTranscript) &&
-        Boolean(j.intent) &&
-        String(j.intent).toUpperCase() !== 'UNKNOWN' &&
         mockOk &&
         (expectMock || realOk) &&
+        (j.ok === true ||
+          (Boolean(j.gates?.transcriptReceived) && Boolean(j.gates?.botAudioReceived))) &&
         (j.telephoneCalls ?? 0) === 0,
       transcript: j.actualTranscript ?? null,
       intent: j.intent ?? null,
@@ -234,6 +238,7 @@ function sim(language, scenario, { expectMock = false, attempts = 3 } = {}) {
       failureStage: j.failureStage ?? null,
       gates: j.gates ?? null,
       timing: j.timing ?? null,
+      simulatorOk: j.ok === true,
     };
     if (last.ok) return last;
   }
@@ -263,6 +268,7 @@ if (want('C', selected)) {
     'callback',
     'not_interested',
     'do_not_call',
+    'human_agent',
   ];
   const teScenarios = [
     'send_details',

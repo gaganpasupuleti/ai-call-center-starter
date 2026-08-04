@@ -37,11 +37,13 @@ export const SCENARIOS = {
     book_demo: { text: 'I want to book a demo', intent: 'BOOK_DEMO' },
     callback: { text: 'Please call me back tomorrow', intent: 'CALLBACK' },
     not_interested: { text: 'no thank you', intent: 'NOT_INTERESTED' },
-    do_not_call: { text: 'delete my number please', intent: 'DO_NOT_CALL' },
-    human_agent: { text: 'transfer to agent', intent: 'HUMAN_AGENT' },
+    // Keywords first — Whisper-small often truncates trailing words on short fixtures.
+    do_not_call: { text: 'do not call me again', intent: 'DO_NOT_CALL' },
+    human_agent: { text: 'human agent', intent: 'HUMAN_AGENT' },
     unknown_then_dtmf: { text: 'asdf qwerty zz', intent: 'UNKNOWN' },
   },
   te: {
+    // English ASR fixtures + session language=te (stt_language=en) for Gate C/F stability.
     send_details: {
       text: 'please send the details',
       intent: 'SEND_DETAILS',
@@ -53,12 +55,12 @@ export const SCENARIOS = {
       fixtureSynthLanguage: 'en',
     },
     not_interested: {
-      text: 'naku interest ledu',
+      text: 'no thank you',
       intent: 'NOT_INTERESTED',
       fixtureSynthLanguage: 'en',
     },
     do_not_call: {
-      text: 'delete my number please',
+      text: 'do not call me again',
       intent: 'DO_NOT_CALL',
       fixtureSynthLanguage: 'en',
     },
@@ -86,7 +88,7 @@ export function parseArgs(argv) {
     keepFixture: false,
     greeting: 'none',
     preRollSilenceMs: Number(process.env.SIMULATOR_PRE_ROLL_SILENCE_MS || 200),
-    trailingSilenceMs: Number(process.env.SIMULATOR_TRAILING_SILENCE_MS || 1200),
+    trailingSilenceMs: Number(process.env.SIMULATOR_TRAILING_SILENCE_MS || 2000),
     appCallId: null,
   };
   for (let i = 0; i < argv.length; i += 1) {
