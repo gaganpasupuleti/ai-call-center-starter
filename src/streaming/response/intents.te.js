@@ -24,18 +24,22 @@ export const INTENTS_TE = {
   DO_NOT_CALL: {
     phrases: [
       '\u0C2E\u0C33\u0C4D\u0C32\u0C40 \u0C15\u0C3E\u0C32\u0C4D \u0C1A\u0C47\u0C2F\u0C35\u0C26\u0C4D\u0C26\u0C41',
+      '\u0C28\u0C3E\u0C15\u0C41 \u0C15\u0C3E\u0C32\u0C4D \u0C1A\u0C47\u0C2F\u0C35\u0C26\u0C4D\u0C26\u0C41',
       'malli call cheyakandi',
       'malli call cheyavaddu',
       'call cheyakandi',
       'number remove cheyandi',
+      'naku call cheyavaddu',
     ],
     requiredKeywords: [
       ['\u0C2E\u0C33\u0C4D\u0C32\u0C40', '\u0C15\u0C3E\u0C32\u0C4D'],
+      ['\u0C28\u0C3E\u0C15\u0C41', '\u0C15\u0C3E\u0C32\u0C4D', '\u0C1A\u0C47\u0C2F\u0C35\u0C26\u0C4D\u0C26\u0C41'],
       ['malli', 'call'],
       ['cheyakandi'],
       ['cheyavaddu'],
+      ['\u0C1A\u0C47\u0C2F\u0C35\u0C26\u0C4D\u0C26\u0C41'],
     ],
-    optionalKeywords: ['number', 'remove'],
+    optionalKeywords: ['number', 'remove', '\u0C28\u0C3E\u0C15\u0C41'],
   },
   NOT_INTERESTED: {
     phrases: [

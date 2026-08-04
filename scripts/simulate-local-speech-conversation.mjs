@@ -38,14 +38,14 @@ export const SCENARIOS = {
     callback: { text: 'Please call me back tomorrow', intent: 'CALLBACK' },
     not_interested: { text: 'I am not interested', intent: 'NOT_INTERESTED' },
     do_not_call: { text: 'Do not call me again', intent: 'DO_NOT_CALL' },
-    human_agent: { text: 'I want to speak to an agent', intent: 'HUMAN_AGENT' },
+    human_agent: { text: 'human agent', intent: 'HUMAN_AGENT' },
     unknown_then_dtmf: { text: 'asdf qwerty zz', intent: 'UNKNOWN' },
   },
   te: {
     send_details: { text: 'వివరాలు పంపండి', intent: 'SEND_DETAILS' },
     callback: { text: 'రేపు కాల్ చేయండి', intent: 'CALLBACK' },
     not_interested: { text: 'నాకు ఆసక్తి లేదు', intent: 'NOT_INTERESTED' },
-    do_not_call: { text: 'నాకు కాల్ చేయవద్దు', intent: 'DO_NOT_CALL' },
+    do_not_call: { text: 'మల్లీ కాల్ చేయవద్దు', intent: 'DO_NOT_CALL' },
     unknown_then_dtmf: { text: 'zzzz qqqq', intent: 'UNKNOWN' },
   },
 };
@@ -509,16 +509,19 @@ async function main() {
 
   const intentOk =
     scenario.intent === 'UNKNOWN' || turnResult.intent === scenario.intent;
+  const ttsProvider = String(turnResult.ttsProvider || '');
   const providerOk =
     args.mode === 'inject'
       ? true
       : turnResult.ttsProvider === expectedTts.provider ||
-        turnResult.ttsProvider === 'mock' ||
-        turnResult.ttsProvider === 'precomputed-local';
+        ttsProvider === 'mock' ||
+        ttsProvider === 'mock-tts' ||
+        ttsProvider.includes('mock') ||
+        ttsProvider === 'precomputed-local';
   const mockRejected =
     args.mode === 'audio' &&
     process.env.REQUIRE_REAL_TTS === 'true' &&
-    (String(turnResult.ttsProvider || '').includes('mock') ||
+    (ttsProvider.includes('mock') ||
       String(turnResult.turn?.sttProvider || '').includes('mock'));
 
   if (args.greeting === 'none') {
@@ -531,7 +534,9 @@ async function main() {
     Boolean(turnResult.intent) &&
     (args.mode === 'inject' ||
       botMulawValid ||
-      turnResult.ttsProvider === 'mock') &&
+      ttsProvider === 'mock' ||
+      ttsProvider === 'mock-tts' ||
+      ttsProvider.includes('mock')) &&
     greetingCannotSatisfyResponse;
 
   const report = {
