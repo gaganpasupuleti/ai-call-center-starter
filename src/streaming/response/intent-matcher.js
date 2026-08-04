@@ -52,6 +52,9 @@ export function softenNotInterestedTruncation(text) {
     [/\bi'?m\s+not\s+in\b/gi, 'i am not interested'],
     [/\bnot\s+interest\b/gi, 'not interested'],
     [/\bnot\s+intereste\b/gi, 'not interested'],
+    // Whisper often hears "number" as "notes" in remove-my-number phrases.
+    [/\bremove\s+my\s+notes\b/gi, 'remove my number'],
+    [/\bdelete\s+my\s+notes\b/gi, 'delete my number'],
   ];
   for (const [re, to] of replacements) t = t.replace(re, to);
   return t;

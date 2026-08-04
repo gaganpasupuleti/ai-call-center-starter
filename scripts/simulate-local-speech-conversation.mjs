@@ -38,7 +38,7 @@ export const SCENARIOS = {
     callback: { text: 'Please call me back tomorrow', intent: 'CALLBACK' },
     // Prefer short thank-you form: "interested" is frequently truncated by Whisper.
     not_interested: { text: 'No thank you', intent: 'NOT_INTERESTED' },
-    do_not_call: { text: 'please remove my number', intent: 'DO_NOT_CALL' },
+    do_not_call: { text: 'stop calling me', intent: 'DO_NOT_CALL' },
     human_agent: { text: 'human agent', intent: 'HUMAN_AGENT' },
     unknown_then_dtmf: { text: 'asdf qwerty zz', intent: 'UNKNOWN' },
   },
@@ -60,7 +60,7 @@ export const SCENARIOS = {
       fixtureSynthLanguage: 'en',
     },
     do_not_call: {
-      text: 'please remove my number',
+      text: 'stop calling me',
       intent: 'DO_NOT_CALL',
       fixtureSynthLanguage: 'en',
     },
