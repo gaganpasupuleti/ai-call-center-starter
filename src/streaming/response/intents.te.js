@@ -30,6 +30,8 @@ export const INTENTS_TE = {
       'call cheyakandi',
       'number remove cheyandi',
       'naku call cheyavaddu',
+      'malikulchia vadu',
+      'malli call',
     ],
     requiredKeywords: [
       ['\u0C2E\u0C33\u0C4D\u0C32\u0C40', '\u0C15\u0C3E\u0C32\u0C4D'],
@@ -38,8 +40,10 @@ export const INTENTS_TE = {
       ['cheyakandi'],
       ['cheyavaddu'],
       ['\u0C1A\u0C47\u0C2F\u0C35\u0C26\u0C4D\u0C26\u0C41'],
+      ['vadu'],
+      ['remove', 'number'],
     ],
-    optionalKeywords: ['number', 'remove', '\u0C28\u0C3E\u0C15\u0C41'],
+    optionalKeywords: ['number', 'remove', '\u0C28\u0C3E\u0C15\u0C41', 'malli', 'call'],
   },
   NOT_INTERESTED: {
     phrases: [
@@ -47,10 +51,13 @@ export const INTENTS_TE = {
       'interest ledu',
       'naku interest ledu',
       'vaddu',
+      'no interest ledu',
+      'interest led',
     ],
     requiredKeywords: [
       ['\u0C06\u0C38\u0C15\u0C4D\u0C24\u0C3F', '\u0C32\u0C47\u0C26\u0C41'],
       ['interest', 'ledu'],
+      ['interest', 'led'],
       ['vaddu'],
     ],
     optionalKeywords: ['naku'],
@@ -79,6 +86,8 @@ export const INTENTS_TE = {
       'tarvata call cheyandi',
       'later call cheyandi',
       'busy unnanu',
+      'poon called cheyenne',
+      'call cheyandi',
     ],
     requiredKeywords: [
       ['\u0C30\u0C47\u0C2A\u0C41', '\u0C15\u0C3E\u0C32\u0C4D'],
@@ -87,6 +96,9 @@ export const INTENTS_TE = {
       ['tarvata', 'call'],
       ['later', 'call'],
       ['busy'],
+      ['called', 'cheyenne'],
+      ['call', 'cheyandi'],
+      ['poon', 'call'],
     ],
     optionalKeywords: ['cheyandi'],
   },
@@ -125,6 +137,8 @@ export const INTENTS_TE = {
       'details pampandi',
       'whatsapp cheyandi',
       'vivaralu pampandi',
+      'vivarola pampendi',
+      'vivarola pampandi',
     ],
     requiredKeywords: [
       ['\u0C35\u0C3F\u0C35\u0C30\u0C3E\u0C32\u0C41'],
@@ -132,8 +146,11 @@ export const INTENTS_TE = {
       ['details', 'pampandi'],
       ['whatsapp'],
       ['vivaralu'],
+      ['vivarola'],
+      ['pampandi'],
+      ['pampendi'],
     ],
-    optionalKeywords: ['pampandi', 'cheyandi'],
+    optionalKeywords: ['pampandi', 'cheyandi', 'pampendi'],
   },
   INTERESTED: {
     phrases: [
