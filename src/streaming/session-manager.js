@@ -658,6 +658,23 @@ export class StreamSessionManager {
       return { mode: 'pipeline', enqueuedChunks: 0 };
     }
 
+    // Local speech simulator uses greeting=none to start listening immediately.
+    const greeting = String(session.customParameters?.greeting || '')
+      .trim()
+      .toLowerCase();
+    if (greeting === 'none') {
+      session.metadata.playbackMode = 'fixed-welcome';
+      session.metadata.welcomePlayed = true;
+      session.metadata.welcomeSkipped = true;
+      session.metadata.welcomeBytes = 0;
+      return {
+        mode: 'fixed-welcome',
+        enqueuedChunks: 0,
+        skippedGreeting: true,
+        byteLength: 0,
+      };
+    }
+
     if (session.metadata.welcomePlayed === true) {
       return {
         mode: 'fixed-welcome',
