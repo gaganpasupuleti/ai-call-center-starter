@@ -68,12 +68,19 @@ def speech_started_event(stream_sid: str, timestamp_ms: int) -> dict:
     }
 
 
-def speech_ended_event(stream_sid: str, utterance_duration_ms: int) -> dict:
-    return {
+def speech_ended_event(
+    stream_sid: str,
+    utterance_duration_ms: int,
+    finalize_reason: str | None = None,
+) -> dict:
+    body = {
         "type": "speech_ended",
         "streamSid": stream_sid,
         "utteranceDurationMs": int(utterance_duration_ms),
     }
+    if finalize_reason:
+        body["finalizeReason"] = str(finalize_reason)
+    return body
 
 
 def transcript_event(

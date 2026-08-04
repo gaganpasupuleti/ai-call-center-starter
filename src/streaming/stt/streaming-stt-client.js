@@ -128,12 +128,18 @@ export class StreamingSttClient {
           this.onEvent?.(event);
           return;
         }
+        if (event.type === STT_SERVER_EVENTS.NO_SPEECH) {
+          this.#clearTranscriptTimer();
+          this.onEvent?.(event);
+          return;
+        }
         if (event.type === STT_SERVER_EVENTS.SPEECH_STARTED) {
           this.#armTranscriptTimer();
           this.onEvent?.(event);
           return;
         }
         if (event.type === STT_SERVER_EVENTS.ERROR) {
+          this.#clearTranscriptTimer();
           const code =
             event.code === 'model_unavailable'
               ? STT_ERROR_CODES.MODEL_UNAVAILABLE

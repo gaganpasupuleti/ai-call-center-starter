@@ -406,6 +406,7 @@ export class StreamSessionManager {
     session.metadata.speechActive = false;
     session.metadata.transcriptionActive = false;
     session.metadata.sttStarted = true;
+    session.metadata.sttConnectedAt = nowIso();
     const streamSid = session.streamSid;
     this.sttManager
       .startSession({
@@ -714,13 +715,34 @@ export class StreamSessionManager {
     }
 
     session.stats.mediaIn += 1;
+    session.metadata.mediaFramesReceived =
+      (session.metadata.mediaFramesReceived || 0) + 1;
+    const byteLen = event.payload?.length || 0;
+    session.metadata.mediaBytesReceived =
+      (session.metadata.mediaBytesReceived || 0) + byteLen;
+    if (!session.metadata.firstMediaReceivedAt) {
+      session.metadata.firstMediaReceivedAt = nowIso();
+    }
     this.#persistEvent(session, event, { validationResult: 'ok' });
     this.callStation?.onProtocolEvent?.(session, 'media');
 
     // Voice conversation: explicit lifecycle gates replace hard outbound skip.
     const voiceForward = this.voiceConversation?.shouldForwardCallerAudio?.(session);
     if (voiceForward === false) {
-      return { ok: true, suppressed: true, reason: 'bot_speaking_or_not_listening' };
+      session.metadata.mediaFramesSuppressed =
+        (session.metadata.mediaFramesSuppressed || 0) + 1;
+      const life = session.metadata?.voiceLifecycle;
+      session.metadata.mediaSuppressReason =
+        life === 'speaking' || life === 'greeting_playing'
+          ? 'bot_speaking'
+          : life === 'closed'
+            ? 'session_closed'
+            : 'not_listening';
+      return {
+        ok: true,
+        suppressed: true,
+        reason: session.metadata.mediaSuppressReason,
+      };
     }
     if (voiceForward !== true) {
       // Fixed welcome or dialer TTS: do not run mock STT/TTS.
@@ -729,6 +751,9 @@ export class StreamSessionManager {
         session.metadata.playbackMode === 'outbound-tts' ||
         session.metadata.customAudioPlayed
       ) {
+        session.metadata.mediaFramesSuppressed =
+          (session.metadata.mediaFramesSuppressed || 0) + 1;
+        session.metadata.mediaSuppressReason = 'not_listening';
         return {
           ok: true,
           playbackMode: session.metadata.playbackMode || 'fixed-welcome',
@@ -744,7 +769,23 @@ export class StreamSessionManager {
 
     // Streaming Faster-Whisper: forward μ-law and return without mock STT.
     if (this.#usesStreamingStt()) {
+      if (
+        this.voiceConversation?.active?.() &&
+        session.metadata.sttStatus !== 'ready' &&
+        session.metadata.sttStatus !== 'speech' &&
+        session.metadata.sttStatus !== 'transcribing' &&
+        session.metadata.sttStatus !== 'responding'
+      ) {
+        session.metadata.mediaFramesSuppressed =
+          (session.metadata.mediaFramesSuppressed || 0) + 1;
+        session.metadata.mediaSuppressReason = 'stt_not_ready';
+        return { ok: true, suppressed: true, reason: 'stt_not_ready' };
+      }
       this.sttManager.pushAudio(session.streamSid, event.payload);
+      session.metadata.mediaFramesForwardedToStt =
+        (session.metadata.mediaFramesForwardedToStt || 0) + 1;
+      session.metadata.mediaBytesForwardedToStt =
+        (session.metadata.mediaBytesForwardedToStt || 0) + byteLen;
       return { ok: true, streamingStt: true };
     }
 

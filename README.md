@@ -12,6 +12,7 @@ A provider-independent foundation for outbound IVR campaigns and future AI voice
 - **Phase 4D:** self-hosted Piper Telugu TTS (CPU) + final local language router (`en`→Kokoro, `te`→Piper). Microsoft Edge online TTS removed. Default remains `VOICE_TTS_PROVIDER=mock`.
 - **Phase 4E:** end-to-end local speech conversation lifecycle + Railway staging configs. Default remains `VOICE_CONVERSATION_ENABLED=false` (DTMF-only).
 - **Phase 4E.1:** Railway speech-service bring-up with baked models, private networking, and real-audio simulator validation (`--mode audio`). See [docs/PHASE_4E1_RAILWAY_BRINGUP.md](docs/PHASE_4E1_RAILWAY_BRINGUP.md).
+- **Phase 4E.2:** Real-audio stabilization (VAD trailing silence, strict listening/STT readiness, fixture bank, direct STT gate). See [docs/PHASE_4E2_REAL_AUDIO_STABILIZATION.md](docs/PHASE_4E2_REAL_AUDIO_STABILIZATION.md). Phase 4F remains blocked until 4E.2 gates pass.
 
 The default configuration **never places a real telephone call**.
 

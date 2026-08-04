@@ -179,3 +179,16 @@ Observed STT speech-end→transcript samples while partially healthy: min≈10.4
 ## Go / no-go for Phase 4F
 
 **No-go.** Speech services can be brought up privately and aggregate readiness can go green, but real-audio end-to-end acceptance gates are not all passing.
+
+## Phase 4E.2 follow-up (do not rewrite 4E.1 results above)
+
+Stabilization work continues on branch `phase-4e2-real-audio-stabilization`.
+See [PHASE_4E2_REAL_AUDIO_STABILIZATION.md](./PHASE_4E2_REAL_AUDIO_STABILIZATION.md).
+
+Primary code fixes:
+
+* Trailing silence 1200 ms (was ~300 ms) vs `VAD_MIN_SILENCE_MS=800`
+* Strict `listening` + `sttStatus=ready` before caller media
+* Fixture bank prepared before WebSocket open
+* Direct STT gate before full-stack audio
+* Kokoro acceptance concurrency default = 1

@@ -19,6 +19,50 @@ from app.vad_engine import ThresholdVad
 
 
 @pytest.mark.asyncio
+async def test_session_diagnostics_track_vad_chain():
+    events = []
+
+    async def emit(e):
+        events.append(e)
+
+    scores = [0.9] * 8 + [0.0] * 50
+    session = StreamSession(
+        stream_sid="diag",
+        call_sid=None,
+        language="en",
+        segmenter=SpeechSegmenter(
+            ThresholdVad(scores=list(scores)),
+            min_speech_ms=100,
+            min_silence_ms=200,
+            window_samples=160,
+        ),
+        transcriber=FakeTranscriber(text="hello details"),
+        emit=emit,
+    )
+    speech = bytes([0x00] * 160)
+    silence = bytes([0xFF] * 160)
+    for _ in range(10):
+        await session.push_mulaw(speech)
+    for _ in range(20):
+        await session.push_mulaw(silence)
+    await session.stop()
+
+    snap = session.snapshot_diagnostics()
+    assert snap["mulawBytesReceived"] > 0
+    assert snap["pcmSamplesDecoded"] > 0
+    assert snap["vadWindowsProcessed"] > 0
+    assert snap["speechStartedCount"] >= 1
+    assert snap["utterancesFinalized"] >= 1
+    assert snap["lastFinalizeReason"] in {"silence", "stop", "max_utterance"}
+    assert snap["transcriptionsStarted"] >= 1
+    assert "audio" not in snap
+    assert not any(isinstance(v, (bytes, bytearray)) for v in snap.values())
+    ended = [e for e in events if e.get("type") == "speech_ended"]
+    assert ended
+    assert ended[0].get("finalizeReason") in {"silence", "stop", "max_utterance"}
+
+
+@pytest.mark.asyncio
 async def test_separate_sessions_do_not_share_buffers():
     events_a = []
     events_b = []

@@ -42,9 +42,13 @@ test('sendPacedMulaw emits SmartPing media events without inject', async () => {
   const mulaw = Buffer.alloc(320, 0x7f);
   const result = await sendPacedMulaw(ws, 'MZtest', mulaw, {
     intervalMs: 0,
+    preRollSilenceMs: 200,
+    trailingSilenceMs: 1200,
   });
   assert.equal(result.frameBytes, 160);
   assert.equal(result.framesSent, 2);
+  assert.equal(result.trailingSilenceFrames, 60);
+  assert.ok(result.trailingSilenceMs >= 800);
   assert.ok(sent.every((m) => m.event === 'media'));
   assert.ok(sent.every((m) => Buffer.from(m.media.payload, 'base64').length === 160));
   assert.ok(!sent.some((m) => String(m).includes('inject')));

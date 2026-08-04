@@ -195,12 +195,30 @@ def create_app(
             except Exception:
                 pass
         finally:
-            if session and not session.closed:
-                try:
-                    await session.stop()
-                except Exception:
-                    pass
+            if session is not None:
+                if not session.closed:
+                    try:
+                        await session.stop()
+                    except Exception:
+                        pass
+                snap = session.snapshot_diagnostics()
+                app.state.last_session_diagnostics = {
+                    "streamSid": session.stream_sid,
+                    **snap,
+                }
+                logger.info(
+                    "stt_session_diagnostics streamSid=%s %s",
+                    session.stream_sid,
+                    snap,
+                )
 
+    @app.get("/v1/diagnostics/last")
+    async def last_diagnostics():
+        """Private/safe counters only — no audio. Used by staging operators."""
+        snap = getattr(app.state, "last_session_diagnostics", None) or {}
+        return {"ok": True, "diagnostics": snap}
+
+    app.state.last_session_diagnostics = {}
     return app
 
 

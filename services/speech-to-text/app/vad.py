@@ -21,6 +21,7 @@ class SegmentEvent:
     samples: np.ndarray | None = None
     duration_ms: int = 0
     reason: str | None = None
+    silence_ms: int = 0
 
 
 class SpeechSegmenter:
@@ -120,6 +121,7 @@ class SpeechSegmenter:
     def _finalize(self, reason: str) -> list[SegmentEvent]:
         events: list[SegmentEvent] = []
         samples = self.utterance.to_array()
+        silence_ms = int(round(1000.0 * self.silence_samples / self.sample_rate))
         # Trim trailing silence except speech pad
         if self.silence_samples > self.speech_pad_samples and samples.size > self.silence_samples:
             keep_silence = self.speech_pad_samples
@@ -135,6 +137,7 @@ class SpeechSegmenter:
                     kind="discarded",
                     duration_ms=duration_ms,
                     reason="too_short",
+                    silence_ms=silence_ms,
                 )
             )
         else:
@@ -144,6 +147,7 @@ class SpeechSegmenter:
                     samples=samples,
                     duration_ms=duration_ms,
                     reason=reason,
+                    silence_ms=silence_ms,
                 )
             )
 

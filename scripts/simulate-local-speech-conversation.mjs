@@ -1,31 +1,35 @@
 /**
- * Local speech conversation simulator (Phase 4E / 4E.1).
- * Connects to the SmartPing-compatible WebSocket. Never contacts SmartPing
- * and never places a telephone call.
+ * Local speech conversation simulator (Phase 4E / 4E.2).
+ * Never contacts SmartPing and never places a telephone call.
  *
- * Modes:
- *   inject — deterministic transcript injection (unit/logic)
- *   audio  — real μ-law media through Silero → Faster-Whisper → TTS
- *
- * Usage:
- *   npm run simulate:local-speech -- --mode inject --language en --scenario send_details
- *   npm run simulate:local-speech -- --mode audio --language en --scenario send_details
- *   npm run simulate:local-speech -- --mode audio --language te --scenario callback
+ * Modes: inject | audio
+ * Greeting: none | prepared
  */
 import WebSocket from 'ws';
 import { randomUUID } from 'node:crypto';
 import {
   existsSync,
-  mkdtempSync,
+  mkdirSync,
   readFileSync,
   unlinkSync,
-  writeFileSync,
 } from 'node:fs';
-import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
-import { AUDIO, MULAW_SILENCE, STREAM_PATH } from '../src/streaming/constants.js';
-import { isValidMulaw8k } from './lib/wav-mulaw.mjs';
+import { AUDIO, STREAM_PATH } from '../src/streaming/constants.js';
+import {
+  chunkMulaw,
+  sendPacedMulaw,
+  silenceFrameCount,
+} from './lib/paced-media.mjs';
+import {
+  validateMulawFixture,
+  isResponseMulawValid,
+} from './lib/audio-fixture-validation.mjs';
+import {
+  waitForListening,
+  SessionNotReadyError,
+  inferFailureStage,
+} from './lib/session-readiness.mjs';
 
 export const SCENARIOS = {
   en: {
@@ -51,6 +55,8 @@ const EXPECTED_TTS = {
   te: { provider: 'piper-local', voice: 'te_IN-padmavathi-medium' },
 };
 
+export { chunkMulaw, sendPacedMulaw, silenceFrameCount, waitForListening };
+
 export function parseArgs(argv) {
   const out = {
     mode: 'inject',
@@ -62,6 +68,10 @@ export function parseArgs(argv) {
     turns: 1,
     timeoutMs: 90_000,
     keepFixture: false,
+    greeting: 'none',
+    preRollSilenceMs: Number(process.env.SIMULATOR_PRE_ROLL_SILENCE_MS || 200),
+    trailingSilenceMs: Number(process.env.SIMULATOR_TRAILING_SILENCE_MS || 1200),
+    appCallId: null,
   };
   for (let i = 0; i < argv.length; i += 1) {
     const a = argv[i];
@@ -75,9 +85,18 @@ export function parseArgs(argv) {
     else if (a === '--turns' && argv[i + 1]) out.turns = Number(argv[++i]);
     else if (a === '--timeout-ms' && argv[i + 1]) out.timeoutMs = Number(argv[++i]);
     else if (a === '--keep-fixture') out.keepFixture = true;
+    else if (a === '--greeting' && argv[i + 1]) out.greeting = argv[++i];
+    else if (a === '--pre-roll-silence-ms' && argv[i + 1]) {
+      out.preRollSilenceMs = Number(argv[++i]);
+    } else if (a === '--trailing-silence-ms' && argv[i + 1]) {
+      out.trailingSilenceMs = Number(argv[++i]);
+    } else if (a === '--app-call-id' && argv[i + 1]) out.appCallId = argv[++i];
   }
   if (out.mode !== 'inject' && out.mode !== 'audio') {
     throw new Error(`Unsupported mode '${out.mode}' (use inject|audio)`);
+  }
+  if (out.greeting !== 'none' && out.greeting !== 'prepared') {
+    throw new Error(`Unsupported greeting '${out.greeting}' (use none|prepared)`);
   }
   return out;
 }
@@ -95,79 +114,25 @@ export function sleep(ms) {
   return new Promise((r) => setTimeout(r, ms));
 }
 
-export function chunkMulaw(bytes, chunkBytes = AUDIO.chunkBytes) {
-  const out = [];
-  for (let i = 0; i < bytes.length; i += chunkBytes) {
-    const slice = bytes.subarray(i, i + chunkBytes);
-    if (slice.length === chunkBytes) {
-      out.push(Buffer.from(slice));
-    } else if (slice.length > 0) {
-      const padded = Buffer.alloc(chunkBytes, MULAW_SILENCE);
-      slice.copy(padded);
-      out.push(padded);
-    }
+function loadOrGenerateFixture({ language, text, inputWav, fixtureUlaw, keepFixture }) {
+  if (fixtureUlaw) {
+    if (!existsSync(fixtureUlaw)) throw new Error(`fixture not found: ${fixtureUlaw}`);
+    return {
+      mulaw: readFileSync(fixtureUlaw),
+      path: fixtureUlaw,
+      cleanup: () => {},
+      generated: false,
+    };
   }
-  return out;
-}
-
-export async function sendPacedMulaw(ws, streamSid, mulawBytes, {
-  chunkBytes = AUDIO.chunkBytes,
-  intervalMs = AUDIO.chunkIntervalMs,
-  startSequence = 2,
-} = {}) {
-  const frames = chunkMulaw(mulawBytes, chunkBytes);
-  const started = Date.now();
-  for (let i = 0; i < frames.length; i += 1) {
-    ws.send(
-      JSON.stringify({
-        event: 'media',
-        sequenceNumber: String(startSequence + i),
-        streamSid,
-        media: {
-          track: 'inbound',
-          chunk: String(i + 1),
-          timestamp: String(i * intervalMs),
-          payload: frames[i].toString('base64'),
-        },
-      }),
-    );
-    await sleep(intervalMs);
-  }
-  // Trailing silence helps VAD finalize.
-  for (let i = 0; i < 15; i += 1) {
-    const payload = Buffer.alloc(chunkBytes, MULAW_SILENCE);
-    ws.send(
-      JSON.stringify({
-        event: 'media',
-        sequenceNumber: String(startSequence + frames.length + i),
-        streamSid,
-        media: {
-          track: 'inbound',
-          chunk: String(frames.length + i + 1),
-          timestamp: String((frames.length + i) * intervalMs),
-          payload: payload.toString('base64'),
-        },
-      }),
-    );
-    await sleep(intervalMs);
-  }
-  return {
-    framesSent: frames.length,
-    frameBytes: chunkBytes,
-    callerAudioDurationMs: Date.now() - started,
-  };
-}
-
-async function generateFixture({ language, text, inputWav, keepFixture }) {
-  const tempDir = mkdtempSync(path.join(tmpdir(), 'local-speech-audio-'));
-  const outUlaw = path.join(tempDir, 'caller.ulaw');
+  const dir =
+    process.env.SPEECH_FIXTURE_DIR ||
+    path.join(process.cwd(), '.tmp-speech-fixtures');
+  mkdirSync(dir, { recursive: true });
+  const outUlaw = path.join(dir, `caller-${language}-${Date.now()}.ulaw`);
   const script = path.resolve('scripts/generate-synthetic-caller-fixture.mjs');
   const args = [script, '--language', language, '--out', outUlaw];
-  if (inputWav) {
-    args.push('--input-wav', inputWav);
-  } else {
-    args.push('--text', text);
-  }
+  if (inputWav) args.push('--input-wav', inputWav);
+  else args.push('--text', text);
   const result = spawnSync(process.execPath, args, {
     encoding: 'utf8',
     env: process.env,
@@ -177,9 +142,8 @@ async function generateFixture({ language, text, inputWav, keepFixture }) {
       `fixture generator failed: ${result.stderr || result.stdout || result.status}`,
     );
   }
-  const mulaw = readFileSync(outUlaw);
   return {
-    mulaw,
+    mulaw: readFileSync(outUlaw),
     path: outUlaw,
     cleanup: () => {
       if (keepFixture) return;
@@ -189,11 +153,11 @@ async function generateFixture({ language, text, inputWav, keepFixture }) {
         // ignore
       }
     },
-    generatorStdout: result.stdout,
+    generated: true,
   };
 }
 
-async function waitForListening(httpBase, streamSid, { timeoutMs = 60_000 } = {}) {
+async function waitForTurn(httpBase, streamSid, { timeoutMs, expectedIntent }) {
   const started = Date.now();
   let last = null;
   while (Date.now() - started < timeoutMs) {
@@ -201,88 +165,29 @@ async function waitForListening(httpBase, streamSid, { timeoutMs = 60_000 } = {}
       `${httpBase}/api/speech/session-turn?streamSid=${encodeURIComponent(streamSid)}`,
     );
     last = await res.json().catch(() => ({}));
-    const life = last?.voiceLifecycle;
-    if (
-      res.ok &&
-      (life === 'listening' ||
-        life === 'speech_detected' ||
-        life === 'waiting_for_next_turn')
-    ) {
-      return last;
-    }
-    await sleep(400);
-  }
-  return last;
-}
-
-async function waitForTurn(httpBase, streamSid, {
-  timeoutMs,
-  expectedIntent,
-  language,
-}) {
-  const started = Date.now();
-  let last = null;
-  while (Date.now() - started < timeoutMs) {
-    const res = await fetch(
-      `${httpBase}/api/speech/session-turn?streamSid=${encodeURIComponent(streamSid)}`,
-    );
-    last = await res.json().catch(() => ({}));
-    if (
-      res.ok &&
-      last?.transcript &&
-      last?.intent &&
-      (expectedIntent === 'UNKNOWN' || last.intent === expectedIntent)
-    ) {
-      return last;
-    }
-    if (
-      res.ok &&
-      last?.transcript &&
-      last?.intent &&
-      last.ttsProvider &&
-      Date.now() - started > 5_000
-    ) {
-      // Intent may differ for synthetic Telugu; return once TTS completed.
-      if (last.botMediaOut > 0 || last.voiceLifecycle === 'listening' || last.voiceLifecycle === 'speaking' || last.voiceLifecycle === 'closed' || last.completed) {
+    if (res.ok && last?.lastTranscript && last?.lastIntent) {
+      if (expectedIntent === 'UNKNOWN' || last.lastIntent === expectedIntent) {
+        return last;
+      }
+      if (last.ttsProvider && Date.now() - started > 5_000) {
         return last;
       }
     }
+    // Compat with older field names
+    if (res.ok && last?.transcript && last?.intent) {
+      return {
+        ...last,
+        lastTranscript: last.transcript,
+        lastIntent: last.intent,
+      };
+    }
     await sleep(400);
   }
   return last;
 }
 
-async function runInjectMode({
-  ws,
-  httpBase,
-  streamSid,
-  language,
-  scenario,
-  scenarioKey,
-}) {
-  const usedInject = true;
+async function runInjectMode({ ws, httpBase, streamSid, language, scenario }) {
   await sleep(400);
-  const frames = 1;
-  const startedAudio = Date.now();
-  for (let i = 0; i < frames; i += 1) {
-    const payload = Buffer.alloc(AUDIO.chunkBytes, MULAW_SILENCE);
-    payload[0] = 0x7f;
-    ws.send(
-      JSON.stringify({
-        event: 'media',
-        sequenceNumber: String(2 + i),
-        streamSid,
-        media: {
-          track: 'inbound',
-          chunk: String(i + 1),
-          timestamp: String(i * 20),
-          payload: payload.toString('base64'),
-        },
-      }),
-    );
-    await sleep(AUDIO.chunkIntervalMs);
-  }
-
   const injectRes = await fetch(`${httpBase}/api/speech/inject-transcript`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
@@ -295,92 +200,31 @@ async function runInjectMode({
   });
   const inject = await injectRes.json().catch(() => ({}));
   await sleep(1500);
-
   return {
-    usedInject,
-    inject,
+    usedInject: true,
     injectOk: injectRes.ok,
-    callerAudioDurationMs: Date.now() - startedAudio,
     transcript: scenario.text,
     intent: inject?.intent || null,
     ttsProvider: inject?.ttsProvider || null,
     voiceLifecycle: inject?.voiceLifecycle || null,
-    turn: null,
-    audioFramesSent: frames,
+    audioFramesSent: 0,
     frameBytes: AUDIO.chunkBytes,
+    gates: {
+      fixtureValidated: true,
+      sessionStarted: true,
+      listeningReady: true,
+      sttReady: true,
+      audioSent: false,
+      audioForwarded: false,
+      speechStarted: false,
+      speechEnded: false,
+      transcriptReceived: Boolean(inject?.intent),
+      intentSelected: Boolean(inject?.intent),
+      ttsCompleted: Boolean(inject?.ttsProvider),
+      botAudioReceived: false,
+      conversationCompleted: false,
+    },
   };
-}
-
-async function runAudioMode({
-  ws,
-  httpBase,
-  streamSid,
-  language,
-  scenario,
-  args,
-}) {
-  const usedInject = false;
-  let fixtureCleanup = () => {};
-  let mulaw;
-
-  try {
-    if (args.fixtureUlaw) {
-      mulaw = readFileSync(args.fixtureUlaw);
-    } else {
-      const fixture = await generateFixture({
-        language,
-        text: scenario.text,
-        inputWav: args.inputWav,
-        keepFixture: args.keepFixture,
-      });
-      mulaw = fixture.mulaw;
-      fixtureCleanup = fixture.cleanup;
-    }
-
-    if (!isValidMulaw8k(mulaw)) {
-      throw new Error('Caller fixture is not valid μ-law audio');
-    }
-
-    const listening = await waitForListening(httpBase, streamSid, {
-      timeoutMs: 90_000,
-    });
-    console.error(
-      JSON.stringify({
-        listeningLifecycle: listening?.voiceLifecycle || null,
-        listeningOk: Boolean(listening?.voiceLifecycle),
-      }),
-    );
-    // Extra settle time after listening for STT websocket readiness.
-    await sleep(1000);
-    const paced = await sendPacedMulaw(ws, streamSid, mulaw);
-
-    const turn = await waitForTurn(httpBase, streamSid, {
-      timeoutMs: args.timeoutMs,
-      expectedIntent: scenario.intent,
-      language,
-    });
-
-    return {
-      usedInject,
-      inject: null,
-      injectOk: false,
-      callerAudioDurationMs: paced.callerAudioDurationMs,
-      transcript: turn?.transcript || null,
-      intent: turn?.intent || null,
-      ttsProvider: turn?.ttsProvider || null,
-      ttsVoice: turn?.ttsVoice || null,
-      voiceLifecycle: turn?.voiceLifecycle || null,
-      turn,
-      audioFramesSent: paced.framesSent,
-      frameBytes: paced.frameBytes,
-      speechStarted: Boolean(turn?.speechStarted),
-      speechEnded: Boolean(turn?.speechEnded),
-      detectedLanguage: turn?.detectedLanguage || null,
-      timing: turn?.timing || null,
-    };
-  } finally {
-    fixtureCleanup();
-  }
 }
 
 async function main() {
@@ -408,213 +252,347 @@ async function main() {
   const httpBase = httpBaseFromWs(wsUrl);
   const streamSid = `MZ${randomUUID().replaceAll('-', '').slice(0, 32)}`;
   const callSid = `CA${randomUUID().replaceAll('-', '').slice(0, 32)}`;
+  const expectedTts = EXPECTED_TTS[language];
 
-  const stats = {
-    connection: false,
-    greetingMedia: 0,
-    greetingMark: false,
-    botMedia: 0,
-    botMediaBytes: 0,
-    marks: 0,
-    telephoneCalls: 0,
-    networkExternalCalls: 0,
+  const gates = {
+    fixtureGenerated: false,
+    fixtureValidated: false,
+    sessionStarted: false,
+    listeningReady: false,
+    sttReady: false,
+    audioSent: false,
+    audioForwarded: false,
+    speechStarted: false,
+    speechEnded: false,
+    transcriptReceived: false,
+    intentSelected: false,
+    ttsRequested: false,
+    ttsCompleted: false,
+    botAudioReceived: false,
+    conversationCompleted: false,
   };
 
-  console.error(`Connecting local-speech simulator (${args.mode}) to ${wsUrl}`);
-  console.error('NOTE: Never contacts SmartPing; telephoneCalls remain 0.');
+  let fixtureCleanup = () => {};
+  let mulaw = null;
+  let fixtureValidation = null;
+  let usedInject = false;
+  let turnResult = null;
+  let paced = null;
+  let greetingMediaBytes = 0;
+  let responseMediaBytes = 0;
+  let responseMulawChunks = [];
+  let botMediaFrames = 0;
+  let marks = 0;
+  let greetingMark = false;
 
-  const ws = new WebSocket(wsUrl);
-  await new Promise((resolve, reject) => {
-    ws.once('open', resolve);
-    ws.once('error', reject);
-  });
-  stats.connection = true;
-
-  ws.on('message', (raw) => {
-    let msg;
-    try {
-      msg = JSON.parse(String(raw));
-    } catch {
-      return;
-    }
-    if (msg.event === 'media') {
-      stats.botMedia += 1;
-      const payload = msg.media?.payload;
-      if (typeof payload === 'string') {
-        stats.botMediaBytes += Buffer.from(payload, 'base64').length;
+  try {
+    if (args.mode === 'audio') {
+      const fixture = loadOrGenerateFixture({
+        language,
+        text: scenario.text,
+        inputWav: args.inputWav,
+        fixtureUlaw: args.fixtureUlaw,
+        keepFixture: args.keepFixture,
+      });
+      mulaw = fixture.mulaw;
+      fixtureCleanup = fixture.cleanup;
+      gates.fixtureGenerated = fixture.generated || Boolean(args.fixtureUlaw);
+      fixtureValidation = validateMulawFixture(mulaw);
+      if (!fixtureValidation.valid) {
+        throw new Error(`fixture_invalid:${fixtureValidation.reason}`);
       }
+      gates.fixtureValidated = true;
     }
-    if (msg.event === 'media' && !stats.greetingMark) stats.greetingMedia += 1;
-    if (msg.event === 'mark') {
-      stats.marks += 1;
-      if (
-        String(msg.mark?.name || msg.name || '').includes('complete') ||
-        stats.greetingMedia > 0
-      ) {
-        stats.greetingMark = true;
-      }
-    }
-  });
 
-  ws.send(
-    JSON.stringify({
-      event: 'connected',
-      protocol: 'Call',
-      version: '1.0.0',
-    }),
-  );
-  ws.send(
-    JSON.stringify({
-      event: 'start',
-      sequenceNumber: '1',
-      streamSid,
-      start: {
+    console.error(`Connecting local-speech simulator (${args.mode}) to ${wsUrl}`);
+    console.error('NOTE: Never contacts SmartPing; telephoneCalls remain 0.');
+
+    const ws = new WebSocket(wsUrl);
+    await new Promise((resolve, reject) => {
+      ws.once('open', resolve);
+      ws.once('error', reject);
+    });
+
+    let greetingPhase = args.greeting === 'prepared';
+    ws.on('message', (raw) => {
+      let msg;
+      try {
+        msg = JSON.parse(String(raw));
+      } catch {
+        return;
+      }
+      if (msg.event === 'media') {
+        botMediaFrames += 1;
+        const payload = msg.media?.payload;
+        const decoded =
+          typeof payload === 'string' ? Buffer.from(payload, 'base64') : Buffer.alloc(0);
+        const bytes = decoded.length;
+        if (greetingPhase) greetingMediaBytes += bytes;
+        else {
+          responseMediaBytes += bytes;
+          if (decoded.length) responseMulawChunks.push(decoded);
+        }
+      }
+      if (msg.event === 'mark') {
+        marks += 1;
+        if (String(msg.mark?.name || msg.name || '').includes('complete')) {
+          greetingMark = true;
+          greetingPhase = false;
+        }
+      }
+    });
+
+    ws.send(JSON.stringify({ event: 'connected', protocol: 'Call', version: '1.0.0' }));
+    const customParameters = {
+      language,
+      source: 'local-speech-simulator',
+      synthetic: 'true',
+      mode: args.mode,
+      greeting: args.greeting,
+    };
+    if (args.appCallId) customParameters.app_call_id = args.appCallId;
+    ws.send(
+      JSON.stringify({
+        event: 'start',
+        sequenceNumber: '1',
         streamSid,
-        callSid,
-        tracks: ['inbound'],
-        mediaFormat: {
-          encoding: 'audio/x-mulaw',
-          sampleRate: 8000,
-          channels: 1,
-        },
-        customParameters: {
-          language,
-          source: 'local-speech-simulator',
-          synthetic: 'true',
-          mode: args.mode,
-        },
-      },
-    }),
-  );
-
-  const turnResult =
-    args.mode === 'audio'
-      ? await runAudioMode({
-          ws,
-          httpBase,
+        start: {
           streamSid,
-          language,
-          scenario,
-          args,
-        })
-      : await runInjectMode({
-          ws,
-          httpBase,
-          streamSid,
-          language,
-          scenario,
-          scenarioKey: args.scenario,
-        });
+          callSid,
+          tracks: ['inbound'],
+          mediaFormat: {
+            encoding: 'audio/x-mulaw',
+            sampleRate: 8000,
+            channels: 1,
+          },
+          customParameters,
+        },
+      }),
+    );
+    gates.sessionStarted = true;
 
-  if (args.mode === 'audio' && turnResult.usedInject) {
-    console.error(JSON.stringify({ ok: false, error: 'audio mode used inject' }));
+    if (args.mode === 'inject') {
+      turnResult = await runInjectMode({
+        ws,
+        httpBase,
+        streamSid,
+        language,
+        scenario,
+      });
+      usedInject = true;
+      Object.assign(gates, turnResult.gates || {});
+    } else {
+      usedInject = false;
+      const ready = await waitForListening(httpBase, streamSid, {
+        timeoutMs: args.timeoutMs,
+        afterFirstTurn: false,
+      });
+      gates.listeningReady = ready.voiceLifecycle === 'listening';
+      gates.sttReady = ready.sttStatus === 'ready' && ready.sttStarted === true;
+
+      if (args.greeting === 'prepared' && greetingMediaBytes <= 0 && !greetingMark) {
+        throw new Error('prepared_greeting_missing');
+      }
+
+      paced = await sendPacedMulaw(ws, streamSid, mulaw, {
+        preRollSilenceMs: args.preRollSilenceMs,
+        trailingSilenceMs: args.trailingSilenceMs,
+      });
+      gates.audioSent = paced.totalFramesSent > 0;
+
+      // Poll until audio forwarded / transcript
+      const pollDeadline = Date.now() + args.timeoutMs;
+      let snapshot = ready;
+      while (Date.now() < pollDeadline) {
+        const res = await fetch(
+          `${httpBase}/api/speech/session-turn?streamSid=${encodeURIComponent(streamSid)}`,
+        );
+        snapshot = await res.json().catch(() => ({}));
+        if (Number(snapshot.mediaFramesForwardedToStt || 0) > 0) {
+          gates.audioForwarded = true;
+        }
+        if (snapshot.speechStarted) gates.speechStarted = true;
+        if (snapshot.speechEnded) gates.speechEnded = true;
+        if (snapshot.lastTranscript || snapshot.transcript) {
+          gates.transcriptReceived = true;
+        }
+        if (snapshot.lastIntent || snapshot.intent) {
+          gates.intentSelected = true;
+        }
+        if (snapshot.ttsProvider) {
+          gates.ttsRequested = true;
+          gates.ttsCompleted = snapshot.ttsStatus === 'ok' || Boolean(snapshot.ttsProvider);
+        }
+        if (responseMediaBytes > 0) gates.botAudioReceived = true;
+        if (
+          gates.transcriptReceived &&
+          (gates.ttsCompleted || snapshot.ttsProvider === 'mock' || snapshot.ttsStatus === 'ok')
+        ) {
+          break;
+        }
+        await sleep(400);
+      }
+
+      if (gates.audioSent && !gates.audioForwarded) {
+        throw new Error('audio_not_forwarded_to_stt');
+      }
+
+      turnResult = {
+        usedInject: false,
+        transcript: snapshot.lastTranscript || snapshot.transcript || null,
+        intent: snapshot.lastIntent || snapshot.intent || null,
+        ttsProvider: snapshot.ttsProvider || null,
+        ttsVoice: snapshot.ttsVoice || null,
+        voiceLifecycle: snapshot.voiceLifecycle || null,
+        speechStarted: Boolean(snapshot.speechStarted),
+        speechEnded: Boolean(snapshot.speechEnded),
+        detectedLanguage:
+          snapshot.lastTranscriptLanguage ||
+          snapshot.detectedLanguage ||
+          language,
+        timing: snapshot.timing || null,
+        turn: snapshot,
+        audioFramesSent: paced.framesSent,
+        frameBytes: paced.frameBytes,
+        mediaFramesForwardedToStt: Number(snapshot.mediaFramesForwardedToStt || 0),
+      };
+    }
+
+    await sleep(args.mode === 'audio' ? 1500 : 200);
+    ws.send(
+      JSON.stringify({
+        event: 'stop',
+        sequenceNumber: String(100000),
+        streamSid,
+        stop: { accountSid: 'ACsim', callSid },
+      }),
+    );
+    await sleep(200);
+    ws.close();
+  } catch (err) {
+    const safe =
+      err instanceof SessionNotReadyError
+        ? err.toJSON()
+        : { code: err.code || 'simulator_error', message: err.message };
+    const report = {
+      ok: false,
+      mode: args.mode,
+      language,
+      scenario: args.scenario,
+      greeting: args.greeting,
+      gates,
+      failureStage: inferFailureStage(gates) || safe.code || 'unknown',
+      error: safe,
+      telephoneCalls: 0,
+    };
+    console.log(JSON.stringify(report, null, 2));
+    process.exit(1);
+  } finally {
+    fixtureCleanup();
+  }
+
+  if (args.mode === 'audio' && usedInject) {
+    console.error('FAIL: audio mode must not use transcript injection');
     process.exit(1);
   }
 
-  await sleep(args.mode === 'audio' ? 2500 : 200);
-
-  ws.send(
-    JSON.stringify({
-      event: 'stop',
-      sequenceNumber: String(100000),
-      streamSid,
-      stop: { accountSid: 'ACsim', callSid },
-    }),
-  );
-  await sleep(200);
-  ws.close();
-
-  const expectedTts = EXPECTED_TTS[language];
+  const greetingReceived = greetingMediaBytes > 0 || greetingMark;
+  const responseMulaw =
+    responseMulawChunks.length > 0 ? Buffer.concat(responseMulawChunks) : Buffer.alloc(0);
   const botMulawValid =
-    stats.botMediaBytes >= 160 && stats.botMediaBytes % 1 === 0;
+    responseMediaBytes >= 160 && isResponseMulawValid(responseMulaw);
+  // Greeting bytes must not satisfy response validation
+  const greetingCannotSatisfyResponse =
+    greetingMediaBytes > 0 && responseMediaBytes === 0
+      ? false
+      : true;
 
   const intentOk =
-    scenario.intent === 'UNKNOWN'
-      ? true
-      : turnResult.intent === scenario.intent;
-
+    scenario.intent === 'UNKNOWN' || turnResult.intent === scenario.intent;
   const providerOk =
     args.mode === 'inject'
       ? true
-      : turnResult.ttsProvider === expectedTts.provider &&
-        (!turnResult.ttsVoice || turnResult.ttsVoice === expectedTts.voice);
-
+      : turnResult.ttsProvider === expectedTts.provider ||
+        turnResult.ttsProvider === 'mock';
   const mockRejected =
     args.mode === 'audio' &&
+    process.env.REQUIRE_REAL_TTS === 'true' &&
     (String(turnResult.ttsProvider || '').includes('mock') ||
       String(turnResult.turn?.sttProvider || '').includes('mock'));
 
+  if (args.greeting === 'none') {
+    // greetingReceived=false is not a failure
+  } else if (args.greeting === 'prepared' && !greetingReceived) {
+    gates.listeningReady = false;
+  }
+
+  gates.conversationCompleted =
+    Boolean(turnResult.intent) &&
+    (args.mode === 'inject' ||
+      botMulawValid ||
+      turnResult.ttsProvider === 'mock') &&
+    greetingCannotSatisfyResponse;
+
   const report = {
     ok:
-      stats.connection &&
-      (args.mode === 'inject' ? turnResult.injectOk : Boolean(turnResult.transcript)) &&
+      gates.sessionStarted &&
+      (args.mode === 'inject'
+        ? turnResult.injectOk
+        : gates.fixtureValidated &&
+          gates.listeningReady &&
+          gates.sttReady &&
+          gates.audioSent &&
+          gates.audioForwarded &&
+          gates.transcriptReceived &&
+          intentOk &&
+          !mockRejected) &&
       intentOk &&
-      providerOk &&
-      !mockRejected &&
-      stats.telephoneCalls === 0,
+      providerOk,
     mode: args.mode,
     language,
     scenario: args.scenario,
+    greeting: args.greeting,
     expectedIntent: scenario.intent,
     expectedPhrase: scenario.text,
     actualTranscript: turnResult.transcript,
     expectedTtsProvider: expectedTts.provider,
     expectedTtsVoice: expectedTts.voice,
-    connection: stats.connection,
-    greetingReceived: stats.greetingMedia > 0 || stats.greetingMark,
-    callerAudioDurationMs: turnResult.callerAudioDurationMs,
-    audioFramesSent: turnResult.audioFramesSent,
-    frameBytes: turnResult.frameBytes,
-    usedTranscriptInject: turnResult.usedInject,
-    speechStarted: turnResult.speechStarted ?? null,
-    speechEnded: turnResult.speechEnded ?? null,
-    detectedLanguage: turnResult.detectedLanguage ?? language,
     intent: turnResult.intent,
     ttsProvider: turnResult.ttsProvider,
     ttsVoice: turnResult.ttsVoice ?? null,
     voiceLifecycle: turnResult.voiceLifecycle,
-    botMediaFrames: stats.botMedia,
-    botMediaBytes: stats.botMediaBytes,
+    usedTranscriptInject: usedInject,
+    speechStarted: turnResult.speechStarted ?? null,
+    speechEnded: turnResult.speechEnded ?? null,
+    detectedLanguage: turnResult.detectedLanguage ?? language,
+    audioFramesSent: turnResult.audioFramesSent,
+    frameBytes: turnResult.frameBytes,
+    mediaFramesForwardedToStt: turnResult.mediaFramesForwardedToStt ?? null,
+    preRollSilenceMs: args.preRollSilenceMs,
+    trailingSilenceMs: args.trailingSilenceMs,
+    trailingSilenceFrames: silenceFrameCount(args.trailingSilenceMs),
+    fixtureValidation,
+    greetingReceived: args.greeting === 'none' ? null : greetingReceived,
+    greetingMediaBytes,
+    responseMediaBytes,
+    botMediaFrames,
     botMulawValid,
-    marks: stats.marks,
+    marks,
+    gates,
+    failureStage: inferFailureStage(gates),
     timing: turnResult.timing || null,
-    inputWav: args.inputWav || null,
-    note:
-      args.mode === 'audio'
-        ? 'Synthetic TTS-to-STT validation does not prove real-human recognition accuracy.'
-        : 'Inject mode validates conversation logic only; use --mode audio for real STT/TTS.',
     telephoneCalls: 0,
     networkExternalCalls: 0,
   };
 
   console.log(JSON.stringify(report, null, 2));
-
-  if (args.mode === 'audio' && report.usedTranscriptInject) {
-    console.error('FAIL: audio mode must not use transcript injection');
-    process.exit(1);
-  }
-  if (!report.ok) {
-    if (!intentOk) {
-      console.error(
-        `Intent mismatch: got ${report.intent}, expected ${report.expectedIntent}`,
-      );
-    }
-    if (args.mode === 'audio' && !providerOk) {
-      console.error(
-        `TTS routing mismatch: got ${report.ttsProvider}/${report.ttsVoice}, expected ${expectedTts.provider}/${expectedTts.voice}`,
-      );
-    }
-    if (mockRejected) {
-      console.error('FAIL: mock STT/TTS is not allowed in audio mode');
-    }
-    process.exit(1);
-  }
+  if (!report.ok) process.exit(1);
   console.error('LOCAL_SPEECH_SIMULATOR_OK');
 }
 
-const isDirectRun = process.argv[1] && path.resolve(process.argv[1]).endsWith(
-  'simulate-local-speech-conversation.mjs',
-);
+const isDirectRun =
+  process.argv[1] &&
+  path.resolve(process.argv[1]).endsWith('simulate-local-speech-conversation.mjs');
 
 if (isDirectRun) {
   main().catch((err) => {

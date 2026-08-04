@@ -237,20 +237,47 @@ export function createApp({
         return sendJson(response, 200, {
           ok: true,
           streamSid,
+          voiceLifecycle: session.metadata?.voiceLifecycle || null,
+          sttStarted: session.metadata?.sttStarted === true,
+          sttStatus: session.metadata?.sttStatus || null,
+          speechActive: session.metadata?.speechActive === true,
+          transcriptionActive: session.metadata?.transcriptionActive === true,
+          mediaFramesIn: Number(session.stats?.mediaIn || 0),
+          mediaBytesIn: Number(session.metadata?.mediaBytesReceived || 0),
+          mediaFramesReceived: Number(session.metadata?.mediaFramesReceived || 0),
+          mediaFramesSuppressed: Number(session.metadata?.mediaFramesSuppressed || 0),
+          mediaFramesForwardedToStt: Number(
+            session.metadata?.mediaFramesForwardedToStt || 0,
+          ),
+          mediaBytesForwardedToStt: Number(
+            session.metadata?.mediaBytesForwardedToStt || 0,
+          ),
+          mediaSuppressReason: session.metadata?.mediaSuppressReason || null,
+          lastTranscript: session.metadata?.lastTranscript || null,
+          lastTranscriptLanguage: session.metadata?.lastTranscriptLanguage || null,
+          lastIntent: session.metadata?.lastIntent || null,
+          lastSttError: session.metadata?.lastSttError || null,
+          ttsProvider: session.metadata?.ttsProvider || null,
+          ttsVoice: session.metadata?.ttsVoice || null,
+          ttsStatus: session.metadata?.ttsStatus || null,
+          sttProvider: session.metadata?.sttProvider || null,
+          // Compat aliases used by older simulators
           transcript: session.metadata?.lastTranscript || null,
+          intent: session.metadata?.lastIntent || null,
           detectedLanguage:
             session.metadata?.detectedLanguage ||
             session.metadata?.lastTranscriptLanguage ||
             null,
-          intent: session.metadata?.lastIntent || null,
-          ttsProvider: session.metadata?.ttsProvider || null,
-          ttsVoice: session.metadata?.ttsVoice || null,
-          sttProvider: session.metadata?.sttProvider || null,
-          voiceLifecycle: session.metadata?.voiceLifecycle || null,
           speechStarted: Boolean(timing.vadSpeechStartedAt),
           speechEnded: Boolean(timing.vadSpeechEndedAt),
           botMediaOut: Number(session.stats?.mediaOut || 0),
           completed: session.metadata?.voiceLifecycle === 'closed',
+          sttConnectedAt: session.metadata?.sttConnectedAt || null,
+          listeningEnteredAt: session.metadata?.listeningEnteredAt || null,
+          firstMediaReceivedAt: session.metadata?.firstMediaReceivedAt || null,
+          speechStartedAt: timing.vadSpeechStartedAt || null,
+          speechEndedAt: timing.vadSpeechEndedAt || null,
+          transcriptReceivedAt: timing.transcriptReceivedAt || null,
           timing: {
             speechDurationMs:
               timing.vadSpeechStartedAt && timing.vadSpeechEndedAt

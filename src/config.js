@@ -412,7 +412,7 @@ export function getConfig(overrides = {}) {
       transcriptTimeoutMs: Number(
         overrides.stt?.transcriptTimeoutMs ??
           process.env.STT_TRANSCRIPT_TIMEOUT_MS ??
-          20000,
+          30000,
       ),
       defaultLanguage: String(
         overrides.stt?.defaultLanguage ??

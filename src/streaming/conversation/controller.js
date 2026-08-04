@@ -155,6 +155,7 @@ export class VoiceConversationController {
       ...session.metadata.turnTiming,
       listeningStartedAt: new Date().toISOString(),
     };
+    session.metadata.listeningEnteredAt = session.metadata.turnTiming.listeningStartedAt;
 
     this.sttStarter?.(session);
     this.callStation?.recordTimeline?.(session, {
