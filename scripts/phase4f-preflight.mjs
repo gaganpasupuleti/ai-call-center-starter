@@ -128,6 +128,8 @@ async function main() {
     if (health.json?.liveCallsEnabled === true) {
       errors.push('app_healthz_reports_live_calls');
       railwayLiveFlagsSafe = false;
+    } else if (healthOk) {
+      railwayLiveFlagsSafe = true;
     }
 
     const settings = await fetchJson(`${base}/api/settings`);
@@ -139,8 +141,6 @@ async function main() {
       if (s.liveCallsEnabled === true || s.smartPingLiveCallsEnabled === true) {
         errors.push('app_settings_live_calls_enabled');
         railwayLiveFlagsSafe = false;
-      } else if (railwayLiveFlagsSafe !== false) {
-        railwayLiveFlagsSafe = true;
       }
       if (s.outboundDialerLive === true) {
         errors.push('app_outbound_dialer_live');
@@ -150,7 +150,7 @@ async function main() {
         warnings.push('call_provider_not_mock');
       }
     } else {
-      warnings.push('settings_unreachable');
+      warnings.push('settings_unreachable_stream_only_ok');
     }
 
     const readiness = await fetchJson(`${base}/api/speech/readiness`);
