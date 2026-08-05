@@ -31,6 +31,7 @@ export const COMPLETION_REASONS = Object.freeze({
   SPEECH_SERVICE_FAILED: 'speech_service_failed',
   CALLER_HANGUP: 'caller_hangup',
   TRANSFER_REQUESTED: 'transfer_requested',
+  PHASE4F_MAX_DURATION: 'phase4f_max_duration',
 });
 
 const TERMINAL = new Set([

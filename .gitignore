@@ -2,6 +2,7 @@
 .env
 .env.*
 !.env.example
+!.env.phase4f.example
 .railway-*.local
 .railway/
 data/*.db

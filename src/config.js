@@ -510,6 +510,13 @@ export function getPublicSettings(config, providerName) {
     kokoroDefaultVoice: config.kokoro?.defaultVoice || 'af_bella',
     piperConfigured: Boolean(config.piper?.baseUrl),
     piperDefaultVoice: config.piper?.defaultVoice || 'te_IN-padmavathi-medium',
+    piperEnglishVoice: config.piper?.englishVoice || null,
+    piperEnglishSpeakerId:
+      config.piper?.englishSpeakerId == null
+        ? null
+        : config.piper.englishSpeakerId,
+    outboundDialerLive: config.outbound?.dialerLive === true,
+    callProvider: providerName,
     sttStreamUrlConfigured: Boolean(config.stt?.streamUrl),
     webhookAuthenticationConfigured: Boolean(config.webhookSecret),
     smartPingWebhookPath: config.smartPing.webhookPath,

@@ -148,6 +148,7 @@ export function createApp({
       pathname === '/api/speech/metrics' ||
       pathname === '/api/speech/session-turn' ||
       pathname === '/api/speech/inject-transcript' ||
+      pathname === '/api/speech/prepare-greeting' ||
       pathname.startsWith('/api/outbound/') ||
       pathname.startsWith('/api/call-station/') ||
       pathname.startsWith('/api/leads') ||
@@ -198,6 +199,27 @@ export function createApp({
       if (request.method === 'GET' && pathname === '/api/speech/readiness') {
         const readiness = await getSpeechReadiness(config);
         return sendJson(response, 200, readiness);
+      }
+
+      if (request.method === 'POST' && pathname === '/api/speech/prepare-greeting') {
+        try {
+          const body = await readJson(request);
+          const { preparePhase4fGreeting } = await import(
+            './streaming/phase4f/prepare-greeting.js'
+          );
+          const prepared = await preparePhase4fGreeting(config, {
+            text: body?.text,
+            promptStore: outboundPrompts,
+          });
+          return sendJson(response, 200, prepared);
+        } catch (error) {
+          return sendJson(response, error?.statusCode || 500, {
+            ok: false,
+            error: error?.message || 'prepare_greeting_failed',
+            code: error?.code || 'prepare_greeting_failed',
+            networkRequestMade: false,
+          });
+        }
       }
 
       if (request.method === 'GET' && pathname === '/api/speech/metrics') {
@@ -373,7 +395,8 @@ export function createApp({
         pathname === '/api/speech/readiness' ||
         pathname === '/api/speech/metrics' ||
         pathname === '/api/speech/session-turn' ||
-        pathname === '/api/speech/inject-transcript';
+        pathname === '/api/speech/inject-transcript' ||
+        pathname === '/api/speech/prepare-greeting';
       if (
         config.exposureMode === 'stream-only' &&
         !isAuthenticatedStreamCommand &&

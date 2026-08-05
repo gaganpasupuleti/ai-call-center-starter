@@ -23,7 +23,9 @@
     "test:stt-stream-real-audio": "node --env-file-if-exists=.env scripts/test-stt-stream-real-audio.mjs",
     "test:kokoro-stability": "node --env-file-if-exists=.env scripts/test-kokoro-stability.mjs",
     "verify:non-live": "node --env-file-if-exists=.env scripts/verify-non-live-environment.mjs",
-    "call:smartping-single": "node --env-file-if-exists=.env scripts/place-test-call.mjs",
+    "call:smartping-single": "node --env-file-if-exists=.env.phase4f --env-file-if-exists=.env scripts/place-test-call.mjs",
+    "phase4f:preflight": "node --env-file-if-exists=.env.phase4f --env-file-if-exists=.env scripts/phase4f-preflight.mjs",
+    "phase4f:voice-samples": "node --env-file-if-exists=.env.phase4f --env-file-if-exists=.env scripts/phase4f-voice-review-samples.mjs",
     "check": "node --check src/server.js && node --check src/app.js && node --check src/database.js && node --check public/app.js"
   },
   "license": "UNLICENSED",

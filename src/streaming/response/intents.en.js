@@ -27,11 +27,17 @@ export const INTENT_PRIORITY_EN = [
 export const INTENTS_EN = {
   DO_NOT_CALL: {
     phrases: [
+      'do not call',
       'do not call me',
+      'do not call me again',
       'dont call me',
       "don't call me",
+      'stop',
       'stop calling',
       'stop calling me',
+      'end the call',
+      'hang up',
+      'hangup',
       'remove my number',
       'delete my number',
       'do not contact me again',
@@ -46,6 +52,8 @@ export const INTENTS_EN = {
       ['not', 'call', 'me'],
       ['not', 'call', 'again'],
       ['stop', 'calling'],
+      ['end', 'call'],
+      ['hang', 'up'],
       ['remove', 'number'],
       ['delete', 'number'],
     ],

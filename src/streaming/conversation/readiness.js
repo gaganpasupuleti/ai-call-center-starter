@@ -25,6 +25,11 @@ export async function getSpeechReadiness(config = {}, { fetchImpl } = {}) {
     ready: true,
     voiceConversationEnabled: config.voiceConversationEnabled === true,
     voiceInteractionMode: config.voiceInteractionMode || 'dtmf',
+    piperEnglishVoice: config.piper?.englishVoice || null,
+    piperEnglishSpeakerId:
+      config.piper?.englishSpeakerId == null
+        ? null
+        : config.piper.englishSpeakerId,
     requiredServices: {
       stt: !sttMock,
       piper: needPiper,

@@ -14,6 +14,7 @@ A provider-independent foundation for outbound IVR campaigns and future AI voice
 - **Phase 4E.1:** Railway speech-service bring-up with baked models, private networking, and real-audio simulator validation (`--mode audio`). See [docs/PHASE_4E1_RAILWAY_BRINGUP.md](docs/PHASE_4E1_RAILWAY_BRINGUP.md).
 - **Phase 4E.2:** Real-audio stabilization (VAD trailing silence, strict listening/STT readiness, fixture bank, direct STT gate). See [docs/PHASE_4E2_REAL_AUDIO_STABILIZATION.md](docs/PHASE_4E2_REAL_AUDIO_STABILIZATION.md).
 - **Phase 4E.3:** CPU-safe English TTS via Piper (`local-cpu`); Kokoro optional/offline only on current Railway CPU. Gates C–F + drills passed on `speech-e2e` — see [docs/PHASE_4E3_CPU_SAFE_ENGLISH_TTS.md](docs/PHASE_4E3_CPU_SAFE_ENGLISH_TTS.md).
+- **Phase 4F:** Controlled consented SmartPing sandbox call (English-only). Complete 4F-A preflight first; never auto-run `--confirm` — see [docs/PHASE_4F_CONTROLLED_SMARTPING_CALL.md](docs/PHASE_4F_CONTROLLED_SMARTPING_CALL.md).
 
 The default configuration **never places a real telephone call**.
 

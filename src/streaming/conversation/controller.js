@@ -16,6 +16,10 @@ import { ResponseActionExecutor } from '../actions/response-action-executor.js';
 import { PIPER_DEFAULT_VOICE, PIPER_DEFAULT_ENGLISH_VOICE, PIPER_DEFAULT_ENGLISH_SPEAKER_ID } from '../tts/piper-voices.js';
 import { KOKORO_DEFAULT_VOICE } from '../tts/kokoro-voices.js';
 import { englishUsesPiper } from '../tts/tts-provider-factory.js';
+import {
+  isPhase4fSession,
+  PHASE4F_MAX_TURNS,
+} from '../phase4f/guards.js';
 
 /**
  * Orchestrates greeting → listen → turn → speak → listen for voice modes.
@@ -221,7 +225,10 @@ export class VoiceConversationController {
     const turn = Number(session.metadata.conversationTurn || 0) + 1;
     session.metadata.conversationTurn = turn;
 
-    const maxTurns = Number(this.appConfig.voiceMaxTurns || 6);
+    const phase4f = isPhase4fSession(session);
+    const maxTurns = phase4f
+      ? PHASE4F_MAX_TURNS
+      : Number(this.appConfig.voiceMaxTurns || 6);
     const intent = pipelineResult?.reply?.intent;
     const dialogState = pipelineResult?.reply?.nextState;
 

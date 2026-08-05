@@ -21,6 +21,11 @@ import { VoiceConversationController } from './conversation/controller.js';
 import { ResponseActionExecutor } from './actions/response-action-executor.js';
 import { globalSpeechMetrics } from './conversation/metrics.js';
 import { clearConversationTimers } from './conversation/timers.js';
+import {
+  isPhase4fSession,
+  PHASE4F_MAX_DURATION_MS,
+} from './phase4f/guards.js';
+import { COMPLETION_REASONS } from './conversation/lifecycle.js';
 
 const MESSAGE_END_HANGUP_MS = 10_000;
 
@@ -253,6 +258,10 @@ export class StreamSessionManager {
       clearTimeout(session.failsafeHangupTimer);
       session.failsafeHangupTimer = null;
     }
+    if (session.phase4fMaxDurationTimer) {
+      clearTimeout(session.phase4fMaxDurationTimer);
+      session.phase4fMaxDurationTimer = null;
+    }
     const streamSid = session.streamSid;
     if (streamSid && this.sttManager) {
       this.sttManager.stopSession(streamSid).catch(() => {});
@@ -297,6 +306,7 @@ export class StreamSessionManager {
     session.appCallId = event.customParameters?.app_call_id ?? null;
     session.state = STREAM_STATES.active;
     this.sessions.set(session.streamSid, session);
+    this.#maybeSchedulePhase4fMaxDuration(session);
 
     if (!session.queue) {
       session.queue = new PacedAudioQueue({
@@ -975,6 +985,47 @@ export class StreamSessionManager {
         }
       }, 1500);
     }, Math.max(0, delayMs));
+  }
+
+  #maybeSchedulePhase4fMaxDuration(session) {
+    if (!isPhase4fSession(session)) return;
+    if (session.metadata?.phase4fMaxDurationScheduled) return;
+    session.metadata.phase4fMaxDurationScheduled = true;
+    session.metadata.phase4fRunId =
+      session.customParameters?.phase4f_run_id || null;
+    const delayMs = PHASE4F_MAX_DURATION_MS;
+    session.metadata.phase4fMaxDurationAt = new Date(
+      Date.now() + delayMs,
+    ).toISOString();
+    this.callStation?.recordTimeline?.(session, {
+      event: 'phase4f_max_duration_scheduled',
+      detail: `${Math.round(delayMs / 1000)}s`,
+    });
+    session.phase4fMaxDurationTimer = setTimeout(() => {
+      session.phase4fMaxDurationTimer = null;
+      if (session.state === STREAM_STATES.closed) return;
+      this.callStation?.recordTimeline?.(session, {
+        event: 'phase4f_max_duration',
+        detail: COMPLETION_REASONS.PHASE4F_MAX_DURATION,
+      });
+      if (this.voiceConversation?.active?.()) {
+        this.voiceConversation
+          .finish?.(session, COMPLETION_REASONS.PHASE4F_MAX_DURATION)
+          .catch(() => {
+            this.#scheduleFailsafeHangup(
+              session,
+              0,
+              COMPLETION_REASONS.PHASE4F_MAX_DURATION,
+            );
+          });
+        return;
+      }
+      this.#scheduleFailsafeHangup(
+        session,
+        0,
+        COMPLETION_REASONS.PHASE4F_MAX_DURATION,
+      );
+    }, delayMs);
   }
 
   #onMark(session, event) {

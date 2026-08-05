@@ -121,8 +121,9 @@ export async function executeVoicebotCall(
 }
 
 /**
- * Fail-closed single-call executor for one approved Stage 1 test.
+ * Fail-closed single-call executor for one approved Stage 1 / Phase 4F test.
  * Requires liveCallsEnabled + singleCallEnabled + confirm === true and dryRun off.
+ * Performs at most one HTTP request and never retries.
  * Does not parse undocumented SmartPing response fields.
  */
 export async function executeSingleVoicebotCall(
@@ -134,12 +135,24 @@ export async function executeSingleVoicebotCall(
     customParameters = { app_call_id: 'stage1-single-call' },
     confirm = false,
     fetchImpl = globalThis.fetch,
+    requireAppCallId = false,
+    maxNetworkRequests = 1,
   },
 ) {
   if (!phoneNumber) {
     throw Object.assign(new Error('Destination number env is required'), {
       statusCode: 400,
       code: 'destination_missing',
+    });
+  }
+
+  if (
+    requireAppCallId &&
+    !String(customParameters?.app_call_id || '').trim()
+  ) {
+    throw Object.assign(new Error('Prepared greeting app_call_id is required'), {
+      statusCode: 400,
+      code: 'greeting_missing',
     });
   }
 
@@ -181,17 +194,46 @@ export async function executeSingleVoicebotCall(
     });
   }
 
-  const response = await fetchImpl(request.url, {
-    method: request.method,
-    headers: request.headers,
-    body: JSON.stringify(request.body),
-  });
-  const bodyText = await response.text();
+  const limit = Number(maxNetworkRequests);
+  if (!Number.isFinite(limit) || limit !== 1) {
+    throw Object.assign(new Error('Phase 4F allows exactly one network request'), {
+      statusCode: 400,
+      code: 'phase4f_max_network_requests',
+    });
+  }
+
+  // Exactly one attempt — never retry on timeout, 4xx, 5xx, or parse failure.
+  let response;
+  try {
+    response = await fetchImpl(request.url, {
+      method: request.method,
+      headers: request.headers,
+      body: JSON.stringify(request.body),
+    });
+  } catch (err) {
+    throw Object.assign(
+      new Error(err?.code || err?.name || 'single_call_fetch_failed'),
+      {
+        statusCode: 502,
+        code: 'single_call_fetch_failed',
+        networkRequestMade: true,
+        retried: false,
+      },
+    );
+  }
+
+  let bodyText = '';
+  try {
+    bodyText = await response.text();
+  } catch {
+    bodyText = '';
+  }
 
   return {
     dryRun: false,
     networkRequestMade: true,
     singleCall: true,
+    retried: false,
     httpStatus: response.status,
     responseBodyBytes: Buffer.byteLength(bodyText),
     // Response field schema remains undocumented — do not parse call IDs.
