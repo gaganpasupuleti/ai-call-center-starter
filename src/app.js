@@ -149,6 +149,7 @@ export function createApp({
       pathname === '/api/speech/session-turn' ||
       pathname === '/api/speech/inject-transcript' ||
       pathname === '/api/speech/prepare-greeting' ||
+      pathname === '/api/speech/voice-review-sample' ||
       pathname.startsWith('/api/outbound/') ||
       pathname.startsWith('/api/call-station/') ||
       pathname.startsWith('/api/leads') ||
@@ -217,6 +218,27 @@ export function createApp({
             ok: false,
             error: error?.message || 'prepare_greeting_failed',
             code: error?.code || 'prepare_greeting_failed',
+            networkRequestMade: false,
+          });
+        }
+      }
+
+      if (request.method === 'POST' && pathname === '/api/speech/voice-review-sample') {
+        try {
+          const body = await readJson(request);
+          const { synthesizePhase4fVoiceReviewSample } = await import(
+            './streaming/phase4f/voice-review-sample.js'
+          );
+          const sample = await synthesizePhase4fVoiceReviewSample(config, {
+            text: body?.text,
+            id: body?.id,
+          });
+          return sendJson(response, 200, sample);
+        } catch (error) {
+          return sendJson(response, error?.statusCode || 500, {
+            ok: false,
+            error: error?.message || 'voice_review_sample_failed',
+            code: error?.code || 'voice_review_sample_failed',
             networkRequestMade: false,
           });
         }
@@ -396,7 +418,8 @@ export function createApp({
         pathname === '/api/speech/metrics' ||
         pathname === '/api/speech/session-turn' ||
         pathname === '/api/speech/inject-transcript' ||
-        pathname === '/api/speech/prepare-greeting';
+        pathname === '/api/speech/prepare-greeting' ||
+        pathname === '/api/speech/voice-review-sample';
       if (
         config.exposureMode === 'stream-only' &&
         !isAuthenticatedStreamCommand &&

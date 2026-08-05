@@ -53,6 +53,10 @@ Generate local samples (temporary WAVs, not committed):
 npm run phase4f:voice-samples
 ```
 
+When Piper is only reachable on the Railway private network, the script uses
+`PHASE4F_APP_BASE_URL` / staging `POST /api/speech/voice-review-sample` (blocked
+while any live outbound gate is open).
+
 Listen to greeting, send-details, callback, and closing lines. Confirm:
 
 * Speech is understandable
